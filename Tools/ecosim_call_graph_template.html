@@ -56,6 +56,7 @@ h1 { margin: 0; font-size: 18px; font-weight: 600; }
 h2 { margin: 0 0 6px; font-size: 16px; }
 h3 { margin: 14px 0 5px; font-size: 13px; }
 .meta, small { color: var(--muted); }
+.meta { overflow-wrap: anywhere; }
 .controls {
   display: grid;
   grid-template-columns: minmax(220px, 2fr) 150px 100px auto;
@@ -196,10 +197,15 @@ const svg = document.getElementById("graph");
 const direction = document.getElementById("direction");
 const depth = document.getElementById("depth");
 const commit = data.metadata.git.commit || "unknown";
+const branch = data.metadata.git.branch || "unknown";
+const sourceState = data.metadata.git.dirty === true
+  ? "dirty worktree; includes possible local source changes"
+  : data.metadata.git.dirty === false ? "clean worktree" : "worktree state unknown";
 document.getElementById("meta").textContent =
   `${data.metadata.internal_procedures.toLocaleString()} procedures, ` +
-  `${data.edges.length.toLocaleString()} calls, commit ${commit.slice(0, 10)}` +
-  `${data.metadata.git.dirty ? " + local changes" : ""}`;
+  `${data.edges.length.toLocaleString()} calls. Tracked EcoSIM commit ${commit} ` +
+  `on ${branch} (${sourceState}).`;
+document.getElementById("meta").title = data.metadata.git.repository || "";
 
 function label(node) { return node.qualified_name || node.name; }
 function nodeLocation(node) { return node.file ? `${node.file}:${node.line}` : node.kind; }

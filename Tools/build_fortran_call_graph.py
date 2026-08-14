@@ -608,14 +608,29 @@ def write_dot(output_dir: Path, graph: dict) -> None:
 
 def write_readme(output_dir: Path, graph: dict) -> None:
     metadata = graph["metadata"]
+    source_commit = metadata["git"].get("commit") or "unknown"
+    source_branch = metadata["git"].get("branch") or "unknown"
+    source_dirty = metadata["git"].get("dirty")
+    if source_dirty is True:
+        source_state = "dirty; the graph may include uncommitted source changes"
+    elif source_dirty is False:
+        source_state = "clean"
+    else:
+        source_state = "unknown"
     text = f"""# EcoSIM searchable calling sequence
 
 Open `ecosim_call_graph.html` in a browser. Search by procedure, module, subsystem, or source path. Selecting a node shows its definition, callers, callees, call sites, and possible dispatch targets.
 
-- source commit: `{metadata['git'].get('commit') or 'unknown'}`
+- tracked EcoSIM source commit: `{source_commit}`
+- source branch: `{source_branch}`
+- source worktree state: `{source_state}`
 - internal procedures: `{metadata['internal_procedures']}`
 - call edges: `{metadata['call_edges']}`
 - source files: `{metadata['source_files']}`
+
+## Tracked EcoSIM revision
+
+This calling graph was generated from EcoSIM commit `{source_commit}` on branch `{source_branch}`. The source worktree was `{source_state}` when indexed. When the state is dirty, the commit identifies the baseline revision, but the graph can also reflect local source edits that are not contained in that commit.
 
 ## Top-level execution sequence
 

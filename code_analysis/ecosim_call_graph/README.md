@@ -2,10 +2,16 @@
 
 Open `ecosim_call_graph.html` in a browser. Search by procedure, module, subsystem, or source path. Selecting a node shows its definition, callers, callees, call sites, and possible dispatch targets.
 
-- source commit: `4c901fa47ee34217582f03b9c7c2018035e9b5d8`
+- tracked EcoSIM source commit: `4c901fa47ee34217582f03b9c7c2018035e9b5d8`
+- source branch: `main`
+- source worktree state: `dirty; the graph may include uncommitted source changes`
 - internal procedures: `1464`
 - call edges: `10502`
 - source files: `188`
+
+## Tracked EcoSIM revision
+
+This calling graph was generated from EcoSIM commit `4c901fa47ee34217582f03b9c7c2018035e9b5d8` on branch `main`. The source worktree was `dirty; the graph may include uncommitted source changes` when indexed. When the state is dirty, the commit identifies the baseline revision, but the graph can also reflect local source edits that are not contained in that commit.
 
 ## Top-level execution sequence
 
