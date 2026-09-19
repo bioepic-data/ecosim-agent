@@ -1,13 +1,17 @@
 ---
 name: ecosim-plant-trait-sanity-check
-description: Sanity-check EcoSIM plant_trait.*.desc parameter values for the first grid only. Use when validating plant trait description files, enforcing clean C3/C4 physiological parameterization, reviewing photosynthetic kinetics, active leaf/root protein allocation, and root hydraulics such as RSRR, RVSR, and ARSRA, or checking ranges, units, and woody/herbaceous block consistency before running EcoSIM.
+description: Read-only sanity-check of EcoSIM plant_trait.*.desc parameter values for the first grid. Use when validating plant trait description files, enforcing clean C3/C4 physiological parameterization, reviewing photosynthetic kinetics, active leaf/root protein allocation, and root hydraulics such as RSRR, RVSR, and ARSRA, or checking ranges, units, and woody/herbaceous block consistency before running EcoSIM. Never edit or replace the `.desc` file.
 ---
 
 # EcoSIM Plant Trait Sanity Check
 
 ## Overview
 
-Use this skill to sanity-check EcoSIM `plant_trait.*.desc` files. Each `PLANT traits for FUNCTIONAL TYPE` block represents one plant, and the default check is intentionally confined to the first grid only: `NY=1, NX=1`. All active plant blocks at that grid are checked.
+Use this skill to sanity-check EcoSIM `plant_trait.*.desc` files. These files are
+strictly read-only: never edit, overwrite, patch, or generate a replacement
+`.desc` file. Each `PLANT traits for FUNCTIONAL TYPE` block represents one plant,
+and the default check is intentionally confined to the first grid only:
+`NY=1, NX=1`. All active plant blocks at that grid are checked.
 
 The check has two layers:
 
@@ -166,7 +170,10 @@ The script returns a nonzero status when `ERROR` findings are present or when no
 
 ## Reporting Guidance
 
-Do not edit the trait file unless the user asks for corrections. This skill is a diagnostic pass.
+Never edit the trait file. This skill is a diagnostic pass. Report recommended
+corrections and, when the user asks to apply them, update the corresponding
+`ecosim_pftpar_*.nc` file through the `ecosim-pftpar-editor` skill and
+`ParamEditor.py`.
 
 When summarizing results, make clear that the check is scoped to the first grid by default, not the full file. If repeated grid columns exist, say how many total blocks were present and how many first-grid plant blocks were inspected.
 

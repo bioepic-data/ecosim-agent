@@ -58,6 +58,7 @@ file output will stored in ./result
 ## 9. Specific Constraints
 - **Fortran Integration:** Remember that the actual simulation engine is Fortran; Python tools are primarily for pre-processing (forcing data) and post-processing (analysis).
 - **Unit Awareness:** Pay strict attention to temporal (hourly vs. daily) and spatial scales.
+- **Plant Trait Files:** Treat every `plant_trait.*.desc` file as read-only. Never edit, overwrite, or generate a replacement `.desc` file. Apply plant trait parameter changes to the appropriate `ecosim_pftpar_*.nc` file with `applications/notebooks/scripts/ParamEditor.py` by following the `ecosim-pftpar-editor` skill.
 
 ## 10. Proactive Assistance
 - If the user is analyzing a specific variable (e.g., `NPP` or `soil_moisture`), suggest relevant statistical checks like regression tests or comparison with benchmark datasets (e.g., FLUXNET).

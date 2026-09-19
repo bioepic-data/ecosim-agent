@@ -1,6 +1,6 @@
 ---
 name: ecosim-pftpar-editor
-description: Edit EcoSIM PFT-parameter NetCDF files such as ecosim_pftpar_20260303.nc with the ParEditor class from applications/notebooks/scripts/ParamEditor.py. Use when asked to modify, scale, copy, compare, or delete PFT parameter records for a plant functional type (six-character pfts code such as gr3s43 or ndlf34), update microbe parameter NetCDF values, or maintain the JSONL change log that records past parameter changes.
+description: Edit EcoSIM PFT-parameter NetCDF files such as ecosim_pftpar_20260303.nc with the ParEditor class from applications/notebooks/scripts/ParamEditor.py. Use when asked to modify, scale, copy, compare, or delete PFT parameter records for a plant functional type (six-character pfts code such as gr3s43 or ndlf34), update microbe parameter NetCDF values, or maintain the JSONL change log that records past parameter changes. Never modify plant_trait.*.desc files; they are read-only references.
 ---
 
 # EcoSIM PFT Parameter Editor (ParamEditor.py)
@@ -9,6 +9,14 @@ Use this skill to edit EcoSIM `ecosim_pftpar_*.nc` PFT-parameter NetCDF files
 with the bundled `ParEditor` class. The canonical tool is
 `applications/notebooks/scripts/ParamEditor.py`; treat it as the source of
 truth. Do not reimplement NetCDF editing when this skill applies.
+
+## File boundary
+
+Treat every `plant_trait.*.desc` file as read-only, including when the request is
+phrased as editing plant trait parameters. Use a `.desc` file only for inspection
+or validation. Apply requested parameter changes to the corresponding
+`ecosim_pftpar_*.nc` file with `ParamEditor.py`. Never patch, overwrite, or emit a
+replacement `.desc` file.
 
 ## Locate the target file
 

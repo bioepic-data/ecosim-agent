@@ -1,6 +1,6 @@
 ---
 name: ecosim-trait-deriver
-description: Use this skill when working with EcoSIM plant trait description files such as `plant_trait.*.desc` and you need to derive trait parameter sets for a named plant from web and online literature evidence, using the `.desc` file as a template and the `ndlf43` tree block or `gr3s43` grass block as the starting archetype.
+description: Use this skill when deriving EcoSIM plant trait parameter recommendations for a named plant from web and online literature evidence, using a read-only `plant_trait.*.desc` file and the `ndlf43` tree block or `gr3s43` grass block as the starting archetype. Never edit or replace the `.desc` file.
 ---
 
 # EcoSIM Trait Deriver
@@ -26,6 +26,11 @@ Use this skill for EcoSIM trait derivation tasks where:
   - left at template defaults when no defensible evidence exists
 
 ## Required behavior
+
+Treat every `plant_trait.*.desc` file as a read-only reference. Parse and inspect
+it, but never edit, overwrite, patch, or generate a replacement `.desc` file.
+Apply approved parameter changes to `ecosim_pftpar_*.nc` through the
+`ecosim-pftpar-editor` skill and `ParamEditor.py`.
 
 When the user asks for traits for a named plant, do not treat the template `.desc` values as species truth.
 
@@ -175,12 +180,13 @@ When the user asks for derivation for a plant name, produce:
 - source links for the evidence used
 - source links for the evidence used, including online literature when applicable
 
-If the user asks for a file output, emit CSV, JSON, or an updated `.desc`-style block.
+If the user asks for a file output, emit CSV or JSON under `result/`. Do not emit
+or modify a `.desc` file; use the NetCDF editor workflow to apply changes.
 
 ## Notes
 
 - `ndlf43` is the default tree reference block.
 - `gr3s43` is the default grass reference block.
-- The `.desc` file is a template.
+- The `.desc` file is a read-only template.
 - If the plant does not clearly fit tree or grass, say so and choose the nearest valid EcoSIM archetype explicitly.
 - If either template block is missing, fail clearly instead of guessing.
