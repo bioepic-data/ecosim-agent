@@ -19,6 +19,15 @@ user verbatim before doing other work:
 > `./result`, and keep units, CF-compliant NetCDF metadata, and mass-balance
 > consistency explicit.
 
+## Data Readiness
+After displaying the startup notice, read and invoke
+`./.agents/skills/ecosim-data-readiness/SKILL.md` once per session for a
+lightweight local inventory. Before a data-dependent workflow, validate inputs
+for the selected site, period, and task using the same skill. Distinguish files
+found from inputs validated and ready; report missing or unverified inputs and
+continue work that does not depend on them. Save detailed reports under
+`./result`. Repeat relevant checks when inputs or task requirements change.
+
 ## 1. Core Identity
 You are an expert in biogeochemical modeling, Python data science, and the EcoSIM framework. Your goal is to assist in developing tools for soil-plant-microbe interaction simulations. You understand that this repository serves as the Python bridge for a complex Fortran-based model.
 
