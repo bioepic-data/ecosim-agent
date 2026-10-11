@@ -113,6 +113,65 @@ class LocationValidationTests(unittest.TestCase):
         self.assertTrue(result["checks"]["country_bounds"].startswith("skipped"))
 
 
+def write_koppen_raster(path):
+    """1-degree toy map: Aw band 10-20 S, ocean 10-20 N, Dfb band 40-50 N; lon -60 to -50."""
+    import numpy as np
+    from netCDF4 import Dataset
+
+    labels = ["Aw", "Cfb", "Dfb"]
+    lats = np.arange(59.5, -60.0, -1.0)
+    lons = np.arange(-59.5, -50.0, 1.0)
+    ids = np.full((len(lats), len(lons)), -1, dtype="i8")
+    ids[(lats < -10) & (lats > -20), :] = 0
+    ids[(lats > 40) & (lats < 50), :] = 2
+    with Dataset(path, "w") as ds:
+        ds.createDimension("lat", len(lats))
+        ds.createDimension("lon", len(lons))
+        ds.createDimension("labels", len(labels))
+        ds.createVariable("lat", "f8", ("lat",))[:] = lats
+        ds.createVariable("lon", "f8", ("lon",))[:] = lons
+        variable = ds.createVariable("ids", "i8", ("lat", "lon"), fill_value=-1)
+        variable[:] = np.ma.masked_equal(ids, -1)
+        label_var = ds.createVariable("labels", str, ("labels",))
+        for index, label in enumerate(labels):
+            label_var[index] = label
+
+
+class KoppenFromCoordinatesTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.raster = str(Path(self.tmp.name, "Koppen.nc"))
+        write_koppen_raster(self.raster)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_matching_class_passes(self):
+        data = ecosim("XX-Aaa", -15.0, -55.0, 25.0, "Aw")
+        result = site.validate_site_location("XX-Aaa", data, self.raster)
+        self.assertEqual(result["checks"]["koppen_from_coordinates"], "passed")
+        self.assertEqual(result["koppen_from_coordinates"]["center"], "Aw")
+
+    def test_lost_latitude_sign_gets_sign_hint(self):
+        data = ecosim("XX-Aaa", 15.0, -55.0, 25.0, "Aw")
+        result = site.validate_site_location("XX-Aaa", data, self.raster)
+        self.assertEqual(result["checks"]["koppen_from_coordinates"], "failed")
+        self.assertIn("opposite-sign latitude", result["warnings"][-1])
+        self.assertEqual(result["status"], "warnings")
+
+    def test_plain_mismatch_is_a_warning_without_sign_hint(self):
+        data = ecosim("XX-Aaa", 45.0, -55.0, 12.0, "Cfb")
+        result = site.validate_site_location("XX-Aaa", data, self.raster)
+        self.assertEqual(result["checks"]["koppen_from_coordinates"], "failed")
+        self.assertNotIn("opposite-sign", result["warnings"][-1])
+        self.assertIn("Dfb", result["warnings"][-1])
+
+    def test_missing_raster_is_not_available(self):
+        data = ecosim("XX-Aaa", -15.0, -55.0, 25.0, "Aw")
+        result = site.validate_site_location("XX-Aaa", data, None)
+        self.assertEqual(result["checks"]["koppen_from_coordinates"], "not_available")
+
+
 class CacheTests(unittest.TestCase):
     def test_cached_metadata_failing_checks_is_refetched(self):
         with tempfile.TemporaryDirectory() as tmp:

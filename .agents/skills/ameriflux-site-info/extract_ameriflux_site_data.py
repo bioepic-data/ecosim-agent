@@ -11,6 +11,8 @@ from html.parser import HTMLParser
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.request import Request, urlopen
 
+import numpy as np
+
 try:
     import requests
 except ImportError:  # pragma: no cover - cached metadata should still work.
@@ -122,6 +124,12 @@ DESCRIPTION_LATITUDE_HINTS = (
 # Plausible mean annual temperature (degC) for each Koppen main group.
 KOPPEN_MAT_RANGES = {"A": (15.0, 35.0), "C": (-3.0, 30.0), "D": (-25.0, 16.0), "E": (-60.0, 8.0)}
 TROPICAL_MAX_ABS_LATITUDE = 35.0
+
+# Gridded Koppen-Geiger map (Beck et al. 2018, Sci. Data 5:180214) with integer
+# `ids(lat, lon)` indexing a `labels` list, e.g. the ILAMB regions/Koppen.nc
+# 0.5-degree product. Searched in this order when --koppen-raster is not given.
+KOPPEN_RASTER_ENV = "ECOSIM_KOPPEN_RASTER"
+KOPPEN_RASTER_CANDIDATES = ("data/Koppen.nc", "data/koppen/Koppen.nc", "data/regions/Koppen.nc")
 
 
 class HtmlTextExtractor(HTMLParser):
@@ -407,7 +415,80 @@ def raw_to_ecosim(site_id: str, raw: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def validate_site_location(site_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+def find_koppen_raster(path: Optional[str] = None) -> Optional[str]:
+    candidates = [path, os.environ.get(KOPPEN_RASTER_ENV), *KOPPEN_RASTER_CANDIDATES]
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def koppen_from_coordinates(raster_path: str, lat: float, lon: float) -> Tuple[Optional[str], List[str]]:
+    """Koppen class of the nearest raster cell and the classes in its 3x3 neighbourhood.
+
+    The neighbourhood absorbs climate boundaries that a coarse grid blurs;
+    ocean cells are missing and contribute nothing.
+    """
+    from netCDF4 import Dataset
+
+    with Dataset(raster_path) as ds:
+        lats = np.asarray(ds["lat"][:], dtype=float)
+        lons = np.asarray(ds["lon"][:], dtype=float)
+        labels = [str(label) for label in ds["labels"][:]]
+        i = int(np.abs(lats - lat).argmin())
+        j = int(np.abs(((lons - lon) + 180.0) % 360.0 - 180.0).argmin())
+        rows = sorted({min(max(i + di, 0), len(lats) - 1) for di in (-1, 0, 1)})
+        cols = sorted({(j + dj) % len(lons) for dj in (-1, 0, 1)})
+        block = ds["ids"][rows, cols]
+        center = ds["ids"][i, j]
+
+    def label(value: Any) -> Optional[str]:
+        if np.ma.is_masked(value) or int(value) < 0 or int(value) >= len(labels):
+            return None
+        return normalize_koppen_code(labels[int(value)])
+
+    neighbourhood = sorted({code for code in (label(v) for v in np.ma.ravel(block)) if code})
+    return label(center), neighbourhood
+
+
+def check_koppen_from_coordinates(
+    raster_path: Optional[str], lat: float, lon: float, page_code: Optional[str]
+) -> Tuple[str, Optional[str], Optional[str], Dict[str, Any]]:
+    """Compare the page Koppen class with the raster at the parsed coordinates.
+
+    Returns (status, error, warning, detail). Mismatches are warnings: maps and
+    periods differ near class boundaries, and an opposite-sign location can match
+    by coincidence. The page-sign and country checks are the hard sign checks;
+    this one adds a "suspect a lost minus sign" hint when the flipped location fits.
+    """
+    if not raster_path:
+        return "not_available", None, None, {"reason": f"No Koppen raster (--koppen-raster or ${KOPPEN_RASTER_ENV})."}
+    if not page_code:
+        return "not_applicable", None, None, {}
+    center, neighbourhood = koppen_from_coordinates(raster_path, lat, lon)
+    detail = {"raster": os.path.abspath(raster_path), "center": center, "neighbourhood": neighbourhood}
+    if page_code in neighbourhood:
+        return "passed", None, None, detail
+    for name, (flat, flon) in (("latitude", (-lat, lon)), ("longitude", (lat, -lon))):
+        if (flat, flon) == (lat, lon):
+            continue
+        _, flipped = koppen_from_coordinates(raster_path, flat, flon)
+        if page_code in flipped:
+            detail[f"opposite_{name}_neighbourhood"] = flipped
+            return "failed", None, (
+                f"Page Koppen {page_code} is absent near ({lat}, {lon}) (raster {neighbourhood or 'ocean'}) "
+                f"but present at the opposite-sign {name}; suspect a lost minus sign."
+            ), detail
+    return "failed", None, (
+        f"Page Koppen {page_code} differs from the Beck et al. map near ({lat}, {lon}): "
+        f"{center or 'ocean'} (neighbourhood {neighbourhood or 'ocean'}). Check the coordinates "
+        "or which Koppen source to trust."
+    ), detail
+
+
+def validate_site_location(
+    site_id: str, data: Dict[str, Any], koppen_raster: Optional[str] = None
+) -> Dict[str, Any]:
     """Cross-check coordinates and MAT against the site ID, page text, and Koppen class.
 
     Errors (sign lost while parsing, coordinates outside the site-ID country)
@@ -477,8 +558,23 @@ def validate_site_location(site_id: str, data: Dict[str, Any]) -> Dict[str, Any]
     else:
         checks["koppen_consistency"] = "not_applicable"
 
+    koppen_status, koppen_error, koppen_warning, koppen_detail = check_koppen_from_coordinates(
+        koppen_raster, lat, lon, koppen
+    )
+    checks["koppen_from_coordinates"] = koppen_status
+    if koppen_error:
+        errors.append(koppen_error)
+    if koppen_warning:
+        warnings.append(koppen_warning)
+
     status = "failed" if errors else ("warnings" if warnings else "passed")
-    return {"status": status, "checks": checks, "errors": errors, "warnings": warnings}
+    return {
+        "status": status,
+        "checks": checks,
+        "errors": errors,
+        "warnings": warnings,
+        "koppen_from_coordinates": koppen_detail,
+    }
 
 
 def output_directory(site_id: str, output_dir: Optional[str]) -> str:
@@ -578,11 +674,13 @@ def extract_site_info(
     output_dir: Optional[str] = None,
     force_refresh: bool = False,
     check_location: bool = True,
+    koppen_raster: Optional[str] = None,
 ) -> Dict[str, Any]:
+    koppen_raster = find_koppen_raster(koppen_raster)
     if not force_refresh:
         cached = load_cached_metadata(site_id, output_dir)
         if cached:
-            validation = validate_site_location(site_id, cached)
+            validation = validate_site_location(site_id, cached, koppen_raster)
             if not check_location or validation["status"] != "failed":
                 cached["_location_validation"] = validation
                 for message in validation["warnings"]:
@@ -596,7 +694,7 @@ def extract_site_info(
 
     raw = fetch_and_parse(site_id)
     final_json = raw_to_ecosim(site_id, raw)
-    validation = validate_site_location(site_id, final_json)
+    validation = validate_site_location(site_id, final_json, koppen_raster)
     final_json["_location_validation"] = validation
     for message in validation["warnings"]:
         print(f"WARNING: {site_id}: {message}", file=sys.stderr)
@@ -619,9 +717,14 @@ def run_site_metadata_flow(
     output_dir: Optional[str] = None,
     force_refresh: bool = False,
     check_location: bool = True,
+    koppen_raster: Optional[str] = None,
 ) -> Dict[str, Any]:
     final_json = extract_site_info(
-        site_id, output_dir=output_dir, force_refresh=force_refresh, check_location=check_location
+        site_id,
+        output_dir=output_dir,
+        force_refresh=force_refresh,
+        check_location=check_location,
+        koppen_raster=koppen_raster,
     )
     outdir = output_directory(site_id, output_dir)
     output_file = os.path.join(outdir, f"{site_id}_ecosim_site.json")
@@ -644,7 +747,12 @@ def main() -> int:
     parser.add_argument(
         "--skip-location-check",
         action="store_true",
-        help="Write metadata even if coordinates fail the page-sign or country-envelope checks.",
+        help="Write metadata even if coordinates fail the page-sign, country, or Koppen-sign checks.",
+    )
+    parser.add_argument(
+        "--koppen-raster",
+        help=f"Gridded Koppen-Geiger NetCDF (Beck et al. 2018 ids/labels) for the coordinate check; "
+             f"defaults to ${KOPPEN_RASTER_ENV} or data/Koppen.nc.",
     )
     args = parser.parse_args()
 
@@ -654,6 +762,7 @@ def main() -> int:
             output_dir=args.output_dir,
             force_refresh=args.force_refresh,
             check_location=not args.skip_location_check,
+            koppen_raster=args.koppen_raster,
         )
     except Exception as exc:
         print(str(exc), file=sys.stderr)
