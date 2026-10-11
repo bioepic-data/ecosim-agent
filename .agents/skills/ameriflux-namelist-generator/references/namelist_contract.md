@@ -37,6 +37,7 @@ Interpretation:
 - `forc_periods` is nine integers: spinup forcing start/end/cycles, regular forcing start/end/cycles, and final forcing start/end/cycles.
 - A zero cycle in the final triple can encode no additional final period.
 - `stop_n` overrides the run length implied by `forc_periods`.
+- EcoSIM's `get_sim_len` (`EcoSIMCtrlMod.F90`) computes that length as the sum of (end - start + 1) x cycles over the triples; the generator uses it as the default `stop_n` and starts the run that many spinup years before the forcing start. The Blodgett `stop_n = 82` is a manual choice one year short of its 83-year forcing plan.
 - `start_date` is the model simulation date, not necessarily the first climate forcing year.
 
 For AmeriFlux site generation, use the climate NetCDF year range as the default forcing window. If `netCDF4` or a `year` variable is unavailable, infer the forcing range from AmeriFlux ERA5 filenames under `data/` or `result/`. Still choose `start_date` and `stop_n` deliberately for the scientific question.

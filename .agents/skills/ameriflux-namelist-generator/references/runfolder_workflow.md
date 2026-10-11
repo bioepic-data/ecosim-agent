@@ -20,7 +20,7 @@ Produce a run directory that contains or can resolve:
 5. Use `ecosim-vegetation-code` to validate the EcoSIM PFT code from site vegetation and Koppen code.
 6. Use `ecosim-natural-plant-mgmt` to create editable PFT-management Excel, JSON, and NetCDF files.
 7. Use `ecosim-soil-mgmt` to create editable soil-management Excel, JSON, and NetCDF files when fertilizer, tillage, irrigation, or other soil management is active.
-8. Use `ameriflux-namelist-generator` to create the namelist and wire input paths into the run folder.
+8. Use `ameriflux-namelist-generator` (`scripts/create_site_run_folder.py`) to assemble `result/<SITE_ID>/input/` and `result/<SITE_ID>/run_dir/` and write the namelist.
 
 ## Expected Artifacts
 
@@ -72,46 +72,71 @@ Before declaring a run folder workable, make sure the user has downloaded or pro
 
 ## Run Folder Layout
 
-Default to an EcoSIM-workspace layout when the user does not specify a directory:
+Unless the user names another location, create the run folder under the
+python-tools `result/` directory, one folder per site, with exactly two
+subfolders. For US-UMB:
 
 ```text
-/Users/jinyuntang/work/github/ecosim_workspace/croots/examples/run_dir/<SITE_ID>/
-  <SITE_ID>.namelist
-  output/
+result/US-UMB/
+  input/      all site inputs and sidecars: *_ecosim_grid.nc, *_ecosim_climate.nc,
+              *_pft_mgmt.nc (and *_soil_mgmt.nc when active), Excel/JSON sidecars,
+              *_ecosim_site.json, derivation and quality reports, logs, plus copies
+              of the PFT parameter, atmospheric GHG, and microbial parameter NetCDF
+  run_dir/    US-UMB.namelist only; every input path is ../input/<file>
 ```
 
-If the executable should live in the run folder, symlink or copy it only when the user provides the executable path or it is obvious from the workspace. Otherwise leave the namelist ready and report the executable assumption.
+The extraction skills write their artifacts directly into `result/<SITE_ID>/`.
+Assembling the run folder moves those files into `input/`, so nothing is left
+loose in `result/<SITE_ID>/`. Copying the shared parameter files makes the
+folder self-contained and pins the parameter versions used by the case.
 
-## Namelist Creation
+Do not create `output/` or other files in `run_dir/`; EcoSIM writes its output
+there when run. Link or copy an executable into `run_dir/` only when the user
+asks or gives its path; otherwise report the executable assumption.
 
-Generate the namelist from the Python-tools repository:
+## Run Folder Creation
+
+After the site inputs exist, assemble the folder and write the namelist with
+the bundled script from the python-tools repository root:
 
 ```bash
-python .agents/skills/ameriflux-namelist-generator/scripts/create_ameriflux_namelist.py \
-  --site-id <SITE_ID> \
-  --output /Users/jinyuntang/work/github/ecosim_workspace/croots/examples/run_dir/<SITE_ID>/<SITE_ID>.namelist \
-  --run-dir /Users/jinyuntang/work/github/ecosim_workspace/croots/examples/run_dir/<SITE_ID>
+python .agents/skills/ameriflux-namelist-generator/scripts/create_site_run_folder.py \
+  --site-id <SITE_ID>
 ```
 
-Use explicit overrides when needed:
+The script:
 
-- `--grid-file`
-- `--pft-mgmt-file`
-- `--climate-file`
-- `--pft-file`
-- `--atm-ghg-file`
-- `--force-start-year`
-- `--force-end-year`
-- `--spinup-end-year`
-- `--start-year`
-- `--stop-n`
+1. moves every file in `result/<SITE_ID>/` into `result/<SITE_ID>/input/`;
+2. copies the PFT parameter, GHG, and microbial parameter files into `input/`
+   (defaults: newest `ecosim_pftpar_*.nc`, `fatm_hist_GHGs_*.nc`, and
+   `MicrobePars.*.nc` in the parent EcoSIM `input_data/`);
+3. fails if `input/<SITE_ID>_ecosim_grid.nc`, `input/<SITE_ID>_ecosim_climate.nc`,
+   or `input/<SITE_ID>_pft_mgmt.nc` is missing, and wires
+   `input/<SITE_ID>_soil_mgmt.nc` when present;
+4. writes `run_dir/<SITE_ID>.namelist` through `create_ameriflux_namelist.py`
+   with paths relative to `run_dir/`;
+5. fails if any namelist input path does not resolve to `../input/`, or if
+   `run_dir/` holds anything besides the namelist.
+
+It is safe to rerun after editing inputs. Use explicit overrides when needed:
+`--grid-file`, `--climate-file`, `--pft-mgmt-file`, `--soil-mgmt-file`,
+`--pft-file`, `--atm-ghg-file`, `--micpar-file` or `--no-micpar`, `--case-name`,
+and the chronology options `--force-start-year`, `--spinup-end-year`,
+`--force-end-year`, `--spinup-cycles`, `--regular-cycles`, `--final-cycles`,
+`--start-year`, `--stop-n`.
+
+Default chronology: spinup repeats the first four forcing years 18 times,
+`start_date` is the forcing start minus the spinup years, and `stop_n` equals
+EcoSIM's `get_sim_len`, i.e. the sum of (end - start + 1) x cycles over the
+`forc_periods` triples. For US-UMB (ERA5 1981-2021) that is start 1909 and
+`stop_n = 72 + 41 = 113`.
 
 ## Validation Checklist
 
 Before declaring the folder workable:
 
-1. Confirm the namelist exists.
-2. From the run folder, resolve every namelist file path that is not `'NO'`.
+1. Confirm `result/<SITE_ID>/` holds only `input/` and `run_dir/`, and `run_dir/` holds only the namelist.
+2. From `run_dir/`, resolve every namelist file path that is not `'NO'`; each must be `../input/<file>`.
 3. Confirm `grid_file_in`, `pft_mgmt_in`, and `clm_hour_file_in` point to the intended site artifacts.
 4. Confirm editable Excel sidecars exist for `grid_file_in`, `pft_mgmt_in`, and soil management when active, and that they were generated from the current NetCDF or reviewed before NetCDF conversion.
 5. Confirm `forc_periods` uses climate forcing years that exist in the source ERA5 or climate NetCDF.
@@ -132,8 +157,9 @@ Before declaring the folder workable:
 
 When finished, report:
 
-- run folder path
-- namelist path
+- run folder path (`result/<SITE_ID>/`)
+- namelist path (`result/<SITE_ID>/run_dir/<SITE_ID>.namelist`)
+- shared parameter files copied into `input/` and their source paths
 - input files referenced by the namelist
 - grid, PFT-management, and soil-management Excel workbook paths
 - forcing year range and `stop_n`

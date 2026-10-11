@@ -588,6 +588,7 @@ def candidate_cache_files(site_id: str, output_dir: Optional[str]) -> List[str]:
     return [
         os.path.join(outdir, f"{site_id}_ecosim_site.json"),
         os.path.join("result", site_id, f"{site_id}_ecosim_site.json"),
+        os.path.join("result", site_id, "input", f"{site_id}_ecosim_site.json"),
         os.path.join("result", f"{site_id}_ecosim_site.json"),
     ]
 

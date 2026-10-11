@@ -83,6 +83,7 @@ def run_site_info(site_id, output_dir="result"):
     preferred_file = os.path.join(output_dir, f"{site_id}_ecosim_site.json")
     candidate_files = [
         preferred_file,
+        os.path.join(output_dir, "input", f"{site_id}_ecosim_site.json"),
         os.path.join("result", f"{site_id}_ecosim_site.json"),
     ]
     for site_file in candidate_files:

@@ -174,6 +174,7 @@ def load_site_data(site_id, result_dir="result"):
     preferred_file = os.path.join(result_dir, f"{site_id}_ecosim_site.json")
     candidate_files = [
         preferred_file,
+        os.path.join(result_dir, "input", f"{site_id}_ecosim_site.json"),
         os.path.join("result", f"{site_id}_ecosim_site.json"),
     ]
 
@@ -214,6 +215,7 @@ def load_soil_data(lon, lat, template_path, site_id, result_dir="result"):
 
     candidate_files = [
         output_json,
+        os.path.join(result_dir, "input", f"profile_{site_id}.json"),
         os.path.join("result", f"profile_{site_id}.json"),
     ]
 
