@@ -30,7 +30,7 @@ Prefer these paths:
 result/<SITE_ID>/<SITE_ID>_ecosim_site.json
 result/<SITE_ID>/<SITE_ID>_ecosim_grid.nc
 result/<SITE_ID>/<SITE_ID>_ecosim_grid.xlsx
-result/<SITE_ID>/<SITE_ID>_ecosim_climate.nc
+result/<SITE_ID>/<SITE_ID>_ecosim_climate_<first>-<last>.nc
 result/<SITE_ID>/<SITE_ID>_pft_mgmt.xlsx
 result/<SITE_ID>/<SITE_ID>_pft_mgmt.json
 result/<SITE_ID>/<SITE_ID>_pft_mgmt.nc
@@ -78,7 +78,7 @@ subfolders. For US-UMB:
 
 ```text
 result/US-UMB/
-  input/      all site inputs and sidecars: *_ecosim_grid.nc, *_ecosim_climate.nc,
+  input/      all site inputs and sidecars: *_ecosim_grid.nc, *_ecosim_climate_<first>-<last>.nc,
               *_pft_mgmt.nc (and *_soil_mgmt.nc when active), Excel/JSON sidecars,
               *_ecosim_site.json, derivation and quality reports, logs, plus copies
               of the PFT parameter, atmospheric GHG, and microbial parameter NetCDF
@@ -110,7 +110,9 @@ The script:
 2. copies the PFT parameter, GHG, and microbial parameter files into `input/`
    (defaults: newest `ecosim_pftpar_*.nc`, `fatm_hist_GHGs_*.nc`, and
    `MicrobePars.*.nc` in the parent EcoSIM `input_data/`);
-3. fails if `input/<SITE_ID>_ecosim_grid.nc`, `input/<SITE_ID>_ecosim_climate.nc`,
+3. finds the climate file `input/<SITE_ID>_ecosim_climate_<first>-<last>.nc` (renaming a legacy
+   `<SITE_ID>_ecosim_climate.nc` by its `year` variable; several year-named files need
+   `--climate-file`); fails if it, `input/<SITE_ID>_ecosim_grid.nc`,
    or `input/<SITE_ID>_pft_mgmt.nc` is missing, and wires
    `input/<SITE_ID>_soil_mgmt.nc` when present;
 4. writes `run_dir/<SITE_ID>.namelist` through `create_ameriflux_namelist.py`

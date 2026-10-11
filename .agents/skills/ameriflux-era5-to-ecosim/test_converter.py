@@ -137,8 +137,8 @@ class ConverterComparisonTests(unittest.TestCase):
 
     def test_dwpth_is_vapor_pressure_not_deficit(self):
         era_file, fullset_file = self.write_inputs()
-        self.convert(era_file, "vapor.nc", fullset_file)
-        forcing = converter.read_ecosim_hourly_forcing(str(self.root / "vapor.nc"))
+        report, _ = self.convert(era_file, "vapor.nc", fullset_file)
+        forcing = converter.read_ecosim_hourly_forcing(report["output_file"])
 
         era = pd.read_csv(era_file)
         expected = converter.vapor_pressure_from_vpd_kpa(era["TA_ERA"], era["VPD_ERA"])
@@ -258,7 +258,7 @@ class ConverterComparisonTests(unittest.TestCase):
         self.assertLess(abs(shortwave["diurnal_centroid_lag_hours"]), 0.1)
         self.assertNotIn("warning", shortwave)
         # Record span is kept: no spill into the previous day/year.
-        forcing = converter.read_ecosim_hourly_forcing(str(self.root / "registered.nc"))
+        forcing = converter.read_ecosim_hourly_forcing(report["output_file"])
         self.assertEqual(forcing["timestamp_start"].min(), pd.Timestamp("2001-05-01 00:00"))
         self.assertEqual(int(forcing["SRADH"].notna().sum()), 60 * 24)
 
@@ -293,6 +293,13 @@ class ConverterComparisonTests(unittest.TestCase):
         report, _ = self.convert_long(era_file, "unverified.nc")
         self.assertEqual(report["time_registration"]["status"], "unverified")
         self.assertEqual(report["time_registration"]["applied_shift_hours"], 0.0)
+
+    def test_output_name_carries_forcing_years(self):
+        era_file, fullset_file = self.write_inputs()
+        report, _ = self.convert(era_file, "US-Tst_ecosim_climate.nc", fullset_file)
+        self.assertEqual(Path(report["output_file"]).name, "US-Tst_ecosim_climate_2001-2001.nc")
+        self.assertTrue(Path(report["output_file"]).exists())
+        self.assertFalse((self.root / "US-Tst_ecosim_climate.nc").exists())
 
     def test_missing_fullset_is_reported_without_failing_conversion(self):
         era_file, fullset_file = self.write_inputs()

@@ -17,7 +17,7 @@ This reference captures the namelist pattern derived from:
 - `pft_file_in`: EcoSIM PFT parameter NetCDF. Use the croots `input_data/ecosim_pftpar_20260520.nc` default only when it matches the experiment.
 - `grid_file_in`: site grid NetCDF, usually `<SITE_ID>_ecosim_grid.nc`.
 - `pft_mgmt_in`: plant management NetCDF, usually `<SITE_ID>_pft_mgmt.nc`.
-- `clm_hour_file_in`: hourly climate forcing NetCDF, usually `<SITE_ID>_ecosim_climate.nc`.
+- `clm_hour_file_in`: hourly climate forcing NetCDF named by its forcing years, `<SITE_ID>_ecosim_climate_<first>-<last>.nc`.
 - `atm_ghg_in`: greenhouse-gas concentration file.
 - `soil_mgmt_in` and `clm_factor_in`: normally `'NO'` for AmeriFlux natural-site runs unless a site-specific file exists.
 

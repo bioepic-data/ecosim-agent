@@ -96,6 +96,7 @@ Other primary File A variables, only when explicitly requested:
 ## Output Rules
 
 - Put outputs under `result/` unless the user provides another path.
+- The EcoSIM climate NetCDF is named by the forcing years it contains, `<SITE_ID>_nldas_ecosim_climate_<first>-<last>.nc`.
 - The default OPeNDAP access path writes only scalar point values for the selected nearest native NLDAS grid cell. The HTTPS archive fallback serves full hourly NetCDF granules; when that fallback is used, the script extracts the point and removes newly downloaded raw granules unless `--keep-raw` is supplied.
 - Long automatic spans are request-heavy. For `1980-2025`, expect `403,248` hourly point API requests. The script refuses such runs unless `--allow-large-download` is explicitly supplied.
 - Write a JSON manifest next to the CSV. Include source URLs, selected grid cell, variables, units, and download timestamps, but never include username or password.

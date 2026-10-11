@@ -89,6 +89,21 @@ class RunFolderTests(unittest.TestCase):
         self.assertIn("pft_mgmt_in", stderr)
         self.assertFalse((self.site_root / "run_dir" / f"{SITE}.namelist").exists())
 
+    def test_legacy_climate_name_gets_year_range(self):
+        status, _ = self.run_folder()
+        self.assertEqual(status, 0)
+        inputs = {p.name for p in (self.site_root / "input").iterdir()}
+        self.assertIn(f"{SITE}_ecosim_climate_1981-2021.nc", inputs)
+        self.assertNotIn(f"{SITE}_ecosim_climate.nc", inputs)
+        self.assertIn(f"clm_hour_file_in='../input/{SITE}_ecosim_climate_1981-2021.nc'", self.namelist())
+
+    def test_competing_climate_files_require_choice(self):
+        write_climate(self.site_root / f"{SITE}_ecosim_climate_1981-2020.nc", 1981, 2020)
+        (self.site_root / f"{SITE}_ecosim_climate.nc").rename(self.site_root / f"{SITE}_ecosim_climate_1981-2021.nc")
+        status, stderr = self.run_folder()
+        self.assertEqual(status, 2)
+        self.assertIn("--climate-file", stderr)
+
     def test_rerun_is_idempotent(self):
         self.run_folder()
         first = self.namelist()

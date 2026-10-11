@@ -1,6 +1,6 @@
 ---
 name: ameriflux-namelist-generator
-description: Create EcoSIM Fortran namelist files and workable EcoSIM run folders for AmeriFlux site runs from site-specific grid, plant management, climate forcing, and greenhouse-gas inputs. Use when preparing or updating an EcoSIM `.namelist`, run folder, runfolder, run directory, or executable-ready site case for AmeriFlux or FLUXNET sites, especially after generating `*_ecosim_grid.nc`, `*_ecosim_climate.nc`, and `*_pft_mgmt.nc` inputs.
+description: Create EcoSIM Fortran namelist files and workable EcoSIM run folders for AmeriFlux site runs from site-specific grid, plant management, climate forcing, and greenhouse-gas inputs. Use when preparing or updating an EcoSIM `.namelist`, run folder, runfolder, run directory, or executable-ready site case for AmeriFlux or FLUXNET sites, especially after generating `*_ecosim_grid.nc`, `*_ecosim_climate_<first>-<last>.nc`, and `*_pft_mgmt.nc` inputs.
 ---
 
 # AmeriFlux Namelist Generator
@@ -20,7 +20,7 @@ When asked to create a run folder for a site, build it under `result/<SITE_ID>/`
 1. Identify the AmeriFlux `site_id` such as `US-Ha1`, `US-MMS`, or `US-Var`.
 2. Confirm that site artifacts exist. Prefer:
    - `result/<SITE_ID>/<SITE_ID>_ecosim_grid.nc`
-   - `result/<SITE_ID>/<SITE_ID>_ecosim_climate.nc`
+   - `result/<SITE_ID>/<SITE_ID>_ecosim_climate_<first>-<last>.nc` (climate files carry their forcing years)
    - `result/<SITE_ID>/<SITE_ID>_pft_mgmt.nc`
    - `result/<SITE_ID>/<SITE_ID>_ecosim_site.json`
    Then search `result/`, `inputs/`, `data/`, and the repository root.

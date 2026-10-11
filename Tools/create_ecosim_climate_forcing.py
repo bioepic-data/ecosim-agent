@@ -20,6 +20,12 @@ import pandas as pd
 from netCDF4 import Dataset
 import numpy as np
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from Tools.climate_naming import finalize_climate_file_name
+
 # Historical NADP grids in data/nadp_data_grids use mg L-1 for the major
 # anions, NH4, Ca, and Cl, but ug L-1 for Mg, Na, and K. Numerically,
 # 1 mg L-1 = 1 g m-3 and 1 ug L-1 = 0.001 g m-3.
@@ -397,8 +403,10 @@ def main():
         print("No chemistry data available, skipping chemistry addition")
         chemistry_report = add_chemistry_to_netcdf(temp_nc, None, years)
 
-    # Rename temp file to final output
+    # Rename temp file to final output, named by its forcing years
+    # (e.g. US-UMB_ecosim_climate_1981-2021.nc).
     os.rename(temp_nc, args.output)
+    args.output = str(finalize_climate_file_name(args.output))
 
     report_path = f"{result_dir}/{site_id}_climate_derivation_report.json"
     underived = sorted(

@@ -41,6 +41,8 @@ python .agents/skills/ameriflux-era5-to-ecosim/era5_to_ecosim_converter.py \
   --quality-report result/US-Ha1/US-Ha1_era5_quality_report.json
 ```
 
+The written file is named by the forcing years it contains, e.g. `result/US-Ha1/US-Ha1_ecosim_climate_1981-2021.nc`.
+
 ## Soil Extraction
 
 The `ameriflux-surgo-grid-extract` skill uses gSSURGO as the primary soil source and FAO HWSD v2.0 from `data/FAO_HWSD2` as fallback when gSSURGO is unavailable or has invalid/fill values. See [the skill instructions](.agents/skills/ameriflux-surgo-grid-extract/SKILL.md) for variable mappings and assumptions.

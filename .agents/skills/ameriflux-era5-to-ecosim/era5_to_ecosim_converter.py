@@ -23,6 +23,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from Tools.climate_naming import finalize_climate_file_name
 from Tools.climate_quality import sanitize_era5_dataframe
 
 
@@ -806,6 +807,14 @@ def convert_era5_to_ecosim(
             "variables": {},
             "warnings": [],
         }
+
+    # Name the file by the forcing years it contains, e.g.
+    # US-UMB_ecosim_climate_1981-2021.nc. Intermediate files that do not end in
+    # .nc (such as the climate tool's *.nc.temp) are left for the caller to name.
+    if str(output_file).endswith(".nc"):
+        output_file = str(finalize_climate_file_name(output_file))
+        print(f"Climate forcing written to {output_file}")
+    quality_report["output_file"] = os.path.abspath(output_file)
 
     # Record the output in a YAML file
     try:

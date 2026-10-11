@@ -23,14 +23,20 @@ from pathlib import Path
 from typing import Optional
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parents[3]
 sys.path.insert(0, str(SCRIPT_DIR))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import create_ameriflux_namelist as namelist_generator  # noqa: E402
+from Tools.climate_naming import finalize_climate_file_name  # noqa: E402
+
+CLIMATE_YEAR_GLOB = "{site}_ecosim_climate_[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9].nc"
 
 # Required site NetCDF inputs: (namelist field, preferred file name pattern).
+# The climate file is found by find_climate_file (year-named).
 REQUIRED_SITE_FILES = {
     "grid_file_in": "{site}_ecosim_grid.nc",
-    "clm_hour_file_in": "{site}_ecosim_climate.nc",
     "pft_mgmt_in": "{site}_pft_mgmt.nc",
 }
 OPTIONAL_SITE_FILES = {"soil_mgmt_in": "{site}_soil_mgmt.nc"}
@@ -86,6 +92,25 @@ def find_site_file(input_dir: Path, site_id: str, pattern: str, explicit: Option
     return candidate if candidate.exists() else None
 
 
+def find_climate_file(input_dir: Path, site_id: str, explicit: Optional[Path]) -> Optional[Path]:
+    """Climate NetCDF named by its forcing years, <SITE_ID>_ecosim_climate_<first>-<last>.nc.
+
+    A legacy <SITE_ID>_ecosim_climate.nc (or an explicit file) is renamed in
+    input/ to carry the years read from its ``year`` variable.
+    """
+    if explicit is not None:
+        return finalize_climate_file_name(copy_static(explicit, input_dir, "climate file"))
+    named = sorted(input_dir.glob(CLIMATE_YEAR_GLOB.format(site=site_id)))
+    if len(named) > 1:
+        raise ValueError(
+            f"Several climate files in {input_dir}: {[p.name for p in named]}; choose one with --climate-file."
+        )
+    if named:
+        return named[0]
+    legacy = input_dir / f"{site_id}_ecosim_climate.nc"
+    return finalize_climate_file_name(legacy) if legacy.exists() else None
+
+
 def check_namelist_paths(namelist_file: Path) -> list[str]:
     """Problems with namelist input paths resolved from the run directory."""
     problems = []
@@ -109,7 +134,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--repo-root", type=Path, default=Path.cwd(), help="Python-tools repository root")
     parser.add_argument("--result-dir", type=Path, help="Result root; default <repo-root>/result")
     parser.add_argument("--grid-file", type=Path, help="Grid NetCDF; default input/<SITE_ID>_ecosim_grid.nc")
-    parser.add_argument("--climate-file", type=Path, help="Climate NetCDF; default input/<SITE_ID>_ecosim_climate.nc")
+    parser.add_argument(
+        "--climate-file",
+        type=Path,
+        help="Climate NetCDF; default input/<SITE_ID>_ecosim_climate_<first>-<last>.nc",
+    )
     parser.add_argument("--pft-mgmt-file", type=Path, help="Plant management NetCDF; default input/<SITE_ID>_pft_mgmt.nc")
     parser.add_argument("--soil-mgmt-file", type=Path, help="Soil management NetCDF; default input/<SITE_ID>_soil_mgmt.nc if present")
     parser.add_argument("--pft-file", type=Path, help="PFT parameter NetCDF; default newest EcoSIM input_data/ecosim_pftpar_*.nc")
@@ -144,11 +173,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         site_files = {
             field: find_site_file(input_dir, site, pattern, explicit)
             for (field, pattern), explicit in zip(
-                REQUIRED_SITE_FILES.items(), (args.grid_file, args.climate_file, args.pft_mgmt_file)
+                REQUIRED_SITE_FILES.items(), (args.grid_file, args.pft_mgmt_file)
             )
         }
+        site_files["clm_hour_file_in"] = find_climate_file(input_dir, site, args.climate_file)
         soil_mgmt = find_site_file(input_dir, site, OPTIONAL_SITE_FILES["soil_mgmt_in"], args.soil_mgmt_file)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

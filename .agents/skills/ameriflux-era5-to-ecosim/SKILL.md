@@ -41,6 +41,8 @@ distorting the water input.
 
 ## Output Data Format
 
+Climate NetCDF files are named by the forcing years they contain: `<SITE_ID>_ecosim_climate_<first>-<last>.nc` (e.g. `US-UMB_ecosim_climate_1981-2021.nc`). The writer reads the `year` variable after writing and renames the file, so an `--output` given without years (or with a stale range) gets the actual range appended; the final path is printed and recorded in the quality report (`output_file`).
+
 The output is a netCDF file with the following variables:
 - `TMPH`: Hourly air temperature (°C)
 - `WINDH`: Hourly wind speed (m s⁻¹)
