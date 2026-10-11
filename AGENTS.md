@@ -28,6 +28,17 @@ found from inputs validated and ready; report missing or unverified inputs and
 continue work that does not depend on them. Save detailed reports under
 `./result`. Repeat relevant checks when inputs or task requirements change.
 
+## Site Run Progress
+For requests to create, set up, or run an EcoSIM case for a site (for example
+"create an ecosim run for site US-UMB"), track progress with
+`./.agents/skills/ecosim-site-run-tracker/SKILL.md`. Initialize the tracker
+with the request text before preparing data, record what files cannot show
+(steps that do not apply, the executable, test and full runs, evaluation
+verdicts) with `set`, and report stage status from `result/<SITE_ID>/PROGRESS.md`
+at the end and whenever asked. The site-input scripts (climate, grid, unified
+extractor, run-folder assembly) rescan the tracker automatically when they
+finish; rescan after anything else that changes the case.
+
 ## 1. Core Identity
 You are an expert in biogeochemical modeling, Python data science, and the EcoSIM framework. Your goal is to assist in developing tools for soil-plant-microbe interaction simulations. You understand that this repository serves as the Python bridge for a complex Fortran-based model.
 

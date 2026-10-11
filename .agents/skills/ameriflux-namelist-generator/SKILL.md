@@ -13,7 +13,7 @@ Read [references/namelist_contract.md](references/namelist_contract.md) when you
 
 For any request to create a run folder, runfolder, run directory, or runnable site case, read and follow [references/runfolder_workflow.md](references/runfolder_workflow.md) before writing files.
 
-When asked to create a run folder for a site, build it under `result/<SITE_ID>/` with two subfolders: `input/` for every input file (site NetCDF, sidecars, reports, and copies of the PFT, GHG, and microbial parameter files) and `run_dir/` for the namelist alone. Use `scripts/create_site_run_folder.py --site-id <SITE_ID>` after the site inputs exist.
+When asked to create a run folder for a site, build it under `result/<SITE_ID>/` with two subfolders: `input/` for every input file (site NetCDF, sidecars, reports, and copies of the PFT, GHG, and microbial parameter files) and `run_dir/` for the namelist alone. Use `scripts/create_site_run_folder.py --site-id <SITE_ID>` after the site inputs exist, and track the request with the `ecosim-site-run-tracker` skill.
 
 ## Workflow
 

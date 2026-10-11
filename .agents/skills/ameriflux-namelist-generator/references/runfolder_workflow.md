@@ -11,6 +11,15 @@ Produce a run directory that contains or can resolve:
 - reachable grid, climate, plant-management, PFT parameter, and greenhouse-gas NetCDF inputs
 - optional output/log subdirectories
 
+## Progress Tracking
+
+Track every run-folder or site-run request with `ecosim-site-run-tracker`:
+`init --site-id <SITE_ID> --request "<request>"` before step 1 below, `scan`
+after each stage (inputs prepared, run folder created, simulation finished,
+evaluation written), and `set` for results files cannot show (skipped soil
+management at unmanaged sites, executable, test run, run completion). Report
+stage status from `result/<SITE_ID>/PROGRESS.md` when finishing or when asked.
+
 ## Canonical Skill Order
 
 1. Use `ameriflux-site-info` to resolve site metadata under `result/<SITE_ID>/`.
@@ -117,8 +126,8 @@ The script:
    `input/<SITE_ID>_soil_mgmt.nc` when present;
 4. writes `run_dir/<SITE_ID>.namelist` through `create_ameriflux_namelist.py`
    with paths relative to `run_dir/`;
-5. fails if any namelist input path does not resolve to `../input/`, or if
-   `run_dir/` holds anything besides the namelist.
+5. fails if any namelist input path does not resolve to `../input/`; other
+   items in `run_dir/` (simulation output on a rerun) are reported, not fatal.
 
 It is safe to rerun after editing inputs. Use explicit overrides when needed:
 `--grid-file`, `--climate-file`, `--pft-mgmt-file`, `--soil-mgmt-file`,
@@ -137,7 +146,7 @@ EcoSIM's `get_sim_len`, i.e. the sum of (end - start + 1) x cycles over the
 
 Before declaring the folder workable:
 
-1. Confirm `result/<SITE_ID>/` holds only `input/` and `run_dir/`, and `run_dir/` holds only the namelist.
+1. Confirm `result/<SITE_ID>/` holds only `input/`, `run_dir/`, and the progress-tracker files (`progress.json`, `PROGRESS.md`), and that a new `run_dir/` holds only the namelist.
 2. From `run_dir/`, resolve every namelist file path that is not `'NO'`; each must be `../input/<file>`.
 3. Confirm `grid_file_in`, `pft_mgmt_in`, and `clm_hour_file_in` point to the intended site artifacts.
 4. Confirm editable Excel sidecars exist for `grid_file_in`, `pft_mgmt_in`, and soil management when active, and that they were generated from the current NetCDF or reviewed before NetCDF conversion.
@@ -159,7 +168,7 @@ Before declaring the folder workable:
 
 When finished, report:
 
-- run folder path (`result/<SITE_ID>/`)
+- run folder path (`result/<SITE_ID>/`) and the tracker summary (`result/<SITE_ID>/PROGRESS.md`)
 - namelist path (`result/<SITE_ID>/run_dir/<SITE_ID>.namelist`)
 - shared parameter files copied into `input/` and their source paths
 - input files referenced by the namelist

@@ -42,6 +42,13 @@ def _load_site_info_module():
     return module
 
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from Tools.run_progress import update_progress  # noqa: E402
+
+
 def extract_site_info(site_id: str, output_dir: str = "result") -> Optional[Dict[str, Any]]:
     """Resolve EcoSIM site metadata with the structured AmeriFlux extractor."""
     module = _load_site_info_module()
@@ -565,6 +572,9 @@ def main():
         soil_mgmt_in=args.soil_mgmt_in,
         lignification=args.lignification,
     )
+    progress = update_progress(args.site_id, args.result_dir)
+    if progress:
+        print(f"Progress tracker: {progress}")
 
 if __name__ == "__main__":
     main()

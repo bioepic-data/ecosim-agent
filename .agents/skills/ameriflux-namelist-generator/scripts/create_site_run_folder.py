@@ -30,6 +30,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import create_ameriflux_namelist as namelist_generator  # noqa: E402
 from Tools.climate_naming import finalize_climate_file_name  # noqa: E402
+from Tools.run_progress import update_progress  # noqa: E402
 
 CLIMATE_YEAR_GLOB = "{site}_ecosim_climate_[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9].nc"
 
@@ -40,6 +41,8 @@ REQUIRED_SITE_FILES = {
     "pft_mgmt_in": "{site}_pft_mgmt.nc",
 }
 OPTIONAL_SITE_FILES = {"soil_mgmt_in": "{site}_soil_mgmt.nc"}
+# Progress-tracker files (ecosim-site-run-tracker) stay at the site root.
+TRACKER_FILES = ("progress.json", "PROGRESS.md")
 NAMELIST_FILE_FIELDS = (
     "pft_file_in", "grid_file_in", "pft_mgmt_in", "clm_hour_file_in",
     "micpar_file_in", "atm_ghg_in", "soil_mgmt_in", "clm_factor_in",
@@ -64,7 +67,7 @@ def collect_site_artifacts(site_root: Path, input_dir: Path) -> list[str]:
     """Move files generated directly in result/<SITE_ID>/ into input/."""
     moved = []
     for path in sorted(site_root.iterdir()):
-        if not path.is_file() or path.name.startswith("."):
+        if not path.is_file() or path.name.startswith(".") or path.name in TRACKER_FILES:
             continue
         target = input_dir / path.name
         if target.exists():
@@ -129,6 +132,22 @@ def check_namelist_paths(namelist_file: Path) -> list[str]:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    """Assemble the run folder, then refresh the site's progress tracker whatever the outcome."""
+    status = assemble(argv)
+    locator = argparse.ArgumentParser(add_help=False)
+    locator.add_argument("--site-id")
+    locator.add_argument("--repo-root", type=Path, default=Path.cwd())
+    locator.add_argument("--result-dir", type=Path)
+    known, _ = locator.parse_known_args(argv)
+    if known.site_id:
+        result_dir = known.result_dir or known.repo_root / "result"
+        progress = update_progress(known.site_id, result_dir)
+        if progress:
+            print(f"Progress tracker: {progress}")
+    return status
+
+
+def assemble(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--site-id", required=True, help="AmeriFlux site ID, e.g. US-UMB")
     parser.add_argument("--repo-root", type=Path, default=Path.cwd(), help="Python-tools repository root")
@@ -222,7 +241,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     problems = check_namelist_paths(namelist_file)
     extra = [path.name for path in run_dir.iterdir() if path.name != namelist_file.name]
     if extra:
-        problems.append(f"run_dir holds files other than the namelist: {extra}")
+        # Expected after a simulation (EcoSIM writes output into run_dir/).
+        print(f"Note: run_dir also holds {len(extra)} other item(s), e.g. {extra[:3]}", file=sys.stderr)
     if problems:
         print("ERROR: run folder validation failed:", file=sys.stderr)
         for problem in problems:

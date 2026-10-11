@@ -25,6 +25,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from Tools.climate_naming import finalize_climate_file_name
+from Tools.run_progress import update_progress
 
 # Historical NADP grids in data/nadp_data_grids use mg L-1 for the major
 # anions, NH4, Ca, and Cl, but ug L-1 for Mg, Na, and K. Numerically,
@@ -429,6 +430,9 @@ def main():
     print(f"Successfully created EcoSIM climate file: {args.output}")
     print(f"Variables not derived from source data: {underived}")
     print(f"Derivation report: {report_path}")
+    progress = update_progress(site_id, result_root)
+    if progress:
+        print(f"Progress tracker: {progress}")
 
 if __name__ == "__main__":
     main()

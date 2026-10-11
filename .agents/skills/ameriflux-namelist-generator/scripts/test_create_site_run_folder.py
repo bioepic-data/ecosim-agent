@@ -55,12 +55,34 @@ class RunFolderTests(unittest.TestCase):
     def test_layout_has_only_input_and_run_dir(self):
         status, _ = self.run_folder()
         self.assertEqual(status, 0)
-        self.assertEqual(sorted(p.name for p in self.site_root.iterdir()), ["input", "run_dir"])
+        self.assertEqual(
+            sorted(p.name for p in self.site_root.iterdir()),
+            ["PROGRESS.md", "input", "progress.json", "run_dir"],
+        )
         self.assertEqual([p.name for p in (self.site_root / "run_dir").iterdir()], [f"{SITE}.namelist"])
         inputs = {p.name for p in (self.site_root / "input").iterdir()}
         self.assertIn(f"{SITE}_pft_mgmt.xlsx", inputs)
         self.assertIn("ecosim_pftpar_20260915.nc", inputs)
         self.assertIn("MicrobePars.20260211.nc", inputs)
+
+    def test_tracker_records_run_folder_and_failures(self):
+        import json
+
+        self.run_folder()
+        state = json.loads((self.site_root / "progress.json").read_text())
+        namelist = state["stages"]["namelist_creation"]["steps"]["namelist"]
+        self.assertEqual(namelist["status"], "done")
+        Path(self.site_root, "input", f"{SITE}_pft_mgmt.nc").unlink()
+        self.run_folder()
+        state = json.loads((self.site_root / "progress.json").read_text())
+        self.assertEqual(state["stages"]["namelist_creation"]["steps"]["namelist"]["status"], "failed")
+
+    def test_tracker_files_stay_at_site_root(self):
+        Path(self.site_root, "progress.json").write_text("{}")
+        Path(self.site_root, "PROGRESS.md").write_text("# progress")
+        self.run_folder()
+        self.assertTrue((self.site_root / "progress.json").exists())
+        self.assertFalse((self.site_root / "input" / "progress.json").exists())
 
     def test_namelist_paths_point_into_input(self):
         self.run_folder()

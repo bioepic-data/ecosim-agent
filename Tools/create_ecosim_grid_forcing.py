@@ -18,6 +18,12 @@ import netCDF4 as nc
 import numpy as np
 from pathlib import Path
 
+PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from Tools.run_progress import update_progress
+
 SOIL_FILL_VALUE = -999.9
 SKILLS_DIR = Path(__file__).resolve().parents[1] / ".agents" / "skills"
 
@@ -994,6 +1000,9 @@ def main():
     print(f"  Vegetation type: {site_data['IXTYP1']} (IGBP code)")
     print(f"  Variables not derived from source data: {report['underived_or_fill_only_variables']}")
     print(f"  Derivation report: {report_path}")
+    progress = update_progress(site_id, result_root)
+    if progress:
+        print(f"  Progress tracker: {progress}")
     if problems:
         print("ERROR: grid soil layers read by EcoSIM are invalid:", file=sys.stderr)
         for problem in problems:
