@@ -530,7 +530,10 @@ def resolve_template_climate_file(args: argparse.Namespace, output: Path) -> Opt
     if args.template_climate_file:
         path = Path(args.template_climate_file)
     else:
-        path = Path(args.site_output_dir) / f"{args.site_id}_ecosim_climate.nc"
+        site_dir = Path(args.site_output_dir)
+        # Prefer the year-named AmeriFlux climate file (<SITE_ID>_ecosim_climate_<first>-<last>.nc).
+        named = sorted(site_dir.glob(f"{args.site_id}_ecosim_climate_[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9].nc"))
+        path = named[-1] if named else site_dir / f"{args.site_id}_ecosim_climate.nc"
     if path.exists() and path.resolve() != output.resolve():
         return path
     return None
@@ -828,6 +831,10 @@ def main() -> int:
         args=args,
     )
     annual_info["auxiliary_climate_variables"] = chemistry_info
+    # Name the file by the forcing years it contains (e.g. *_nldas_ecosim_climate_2001-2020.nc).
+    from Tools.climate_naming import finalize_climate_file_name
+
+    netcdf_path = finalize_climate_file_name(netcdf_path)
     annual = annual_forcing_table(years, grid_lon, annual_info, netcdf_path)
 
     report = quality_report(native, ecosim, annual, metadata)

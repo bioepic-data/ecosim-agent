@@ -10,7 +10,9 @@ Combines four functionalities:
 The script produces a single JSON file containing site information and per‑year NADP, tDEP, and gSSURGO data.
 """
 
+import glob
 import os
+import re
 import sys
 import json
 import argparse
@@ -38,6 +40,13 @@ def _load_site_info_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from Tools.run_progress import update_progress  # noqa: E402
 
 
 def extract_site_info(site_id: str, output_dir: str = "result") -> Optional[Dict[str, Any]]:
@@ -219,6 +228,8 @@ def run_gssurgo_extraction(gdb_path: str, lon: float, lat: float, template_path:
     if result.returncode != 0:
         print(f"gSSURGO extraction failed: {result.stderr}", file=sys.stderr)
         return None
+    if result.stderr.strip():
+        print(result.stderr.strip(), file=sys.stderr)
     try:
         with open(out_path, "r") as f:
             return json.load(f)
@@ -308,8 +319,32 @@ def run_namelist_generation(
 
 
 def existing_site_artifact(result_dir: str, site_id: str, filename: str) -> str:
-    path = os.path.join(result_dir, site_id, filename)
-    return path if os.path.exists(path) else ""
+    for folder in (os.path.join(result_dir, site_id), os.path.join(result_dir, site_id, "input")):
+        path = os.path.join(folder, filename)
+        if os.path.exists(path):
+            return path
+    return ""
+
+
+CLIMATE_NAME_WITH_YEARS = re.compile(r"_ecosim_climate_(\d{4})-(\d{4})\.nc$")
+
+
+def existing_climate_artifact(result_dir: str, site_id: str) -> str:
+    """Year-named climate file (<SITE_ID>_ecosim_climate_<first>-<last>.nc), else the legacy name."""
+    for folder in (os.path.join(result_dir, site_id), os.path.join(result_dir, site_id, "input")):
+        named = sorted(
+            path for path in glob.glob(os.path.join(folder, f"{site_id}_ecosim_climate_*.nc"))
+            if CLIMATE_NAME_WITH_YEARS.search(path)
+        )
+        if named:
+            return named[-1]
+    return existing_site_artifact(result_dir, site_id, f"{site_id}_ecosim_climate.nc")
+
+
+def created_climate_path(stdout: str) -> str:
+    """Final climate path reported by Tools/create_ecosim_climate_forcing.py."""
+    match = re.search(r"Successfully created EcoSIM climate file: (.+)", stdout)
+    return match.group(1).strip() if match else ""
 
 # --- Unified workflow ---
 
@@ -381,6 +416,7 @@ def run_unified_extraction(
         json.dump(unified, f, indent=4)
     print(f"Unified extraction complete. Output written to {output_file}")
     # Generate EcoSIM climate forcing NetCDF if requested
+    generated_climate_path = ""
     if climate_output:
         climate_script_path = os.path.join(os.getcwd(), "Tools", "create_ecosim_climate_forcing.py")
         climate_cmd = [sys.executable, climate_script_path, site_id or ""]
@@ -388,20 +424,36 @@ def run_unified_extraction(
             climate_cmd.extend(["--output", climate_output])
         climate_cmd.extend(["--data-dir", climate_data_dir, "--result-dir", result_dir])
         result = subprocess.run(climate_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"EcoSIM climate forcing generation failed: {result.stderr}", file=sys.stderr)
+        # The climate tool renames its output to carry the forcing years.
+        output_path = created_climate_path(result.stdout) or climate_output
+        if result.returncode != 0 or not os.path.exists(output_path):
+            print(
+                f"EcoSIM climate forcing generation failed (exit {result.returncode}); "
+                f"{output_path} {'exists' if os.path.exists(output_path) else 'was not written'}.\n"
+                f"{result.stdout}{result.stderr}",
+                file=sys.stderr,
+            )
         else:
-            output_path = climate_output if climate_output else os.path.join(result_dir, f"{site_id}_ecosim_climate.nc")
+            if result.stderr.strip():
+                print(result.stderr.strip(), file=sys.stderr)
             print(f"EcoSIM climate forcing generated: {output_path}")
+            generated_climate_path = output_path
     # Generate EcoSIM grid forcing NetCDF if requested
     if grid_output:
         grid_script_path = os.path.join(os.getcwd(), "Tools", "create_ecosim_grid_forcing.py")
         grid_cmd = [sys.executable, grid_script_path, site_id or ""]
         result = subprocess.run(grid_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"EcoSIM grid forcing generation failed: {result.stderr}", file=sys.stderr)
+        default_grid_path = os.path.join(result_dir, site_id or "", f"{site_id}_ecosim_grid.nc")
+        if result.returncode != 0 or not os.path.exists(default_grid_path):
+            print(
+                f"EcoSIM grid forcing generation failed (exit {result.returncode}); "
+                f"{default_grid_path} {'exists' if os.path.exists(default_grid_path) else 'was not written'}.\n"
+                f"{result.stdout}{result.stderr}",
+                file=sys.stderr,
+            )
         else:
-            default_grid_path = os.path.join(result_dir, site_id, f"{site_id}_ecosim_grid.nc")
+            if result.stderr.strip():
+                print(result.stderr.strip(), file=sys.stderr)
             if os.path.abspath(grid_output) != os.path.abspath(default_grid_path):
                 try:
                     os.rename(default_grid_path, grid_output)
@@ -416,9 +468,7 @@ def run_unified_extraction(
         if not site_id:
             print("EcoSIM namelist generation skipped: --site-id is required.", file=sys.stderr)
         else:
-            climate_for_namelist = climate_output or existing_site_artifact(
-                result_dir, site_id, f"{site_id}_ecosim_climate.nc"
-            )
+            climate_for_namelist = generated_climate_path or existing_climate_artifact(result_dir, site_id)
             grid_for_namelist = grid_output or existing_site_artifact(
                 result_dir, site_id, f"{site_id}_ecosim_grid.nc"
             )
@@ -444,10 +494,8 @@ def run_unified_extraction(
 
     # Record forcing files in YAML
     forcing_data = {}
-    if climate_output:
-        # Determine actual final path
-        actual_climate_path = climate_output if climate_output else os.path.join(result_dir, f"{site_id}_ecosim_climate.nc")
-        forcing_data["clm_hour_file_in"] = os.path.abspath(actual_climate_path)
+    if generated_climate_path:
+        forcing_data["clm_hour_file_in"] = os.path.abspath(generated_climate_path)
     if grid_output:
         actual_grid_path = grid_output if grid_output else os.path.join(result_dir, site_id, f"{site_id}_ecosim_grid.nc")
         forcing_data["grid_file_in"] = os.path.abspath(actual_grid_path)
@@ -524,6 +572,9 @@ def main():
         soil_mgmt_in=args.soil_mgmt_in,
         lignification=args.lignification,
     )
+    progress = update_progress(args.site_id, args.result_dir)
+    if progress:
+        print(f"Progress tracker: {progress}")
 
 if __name__ == "__main__":
     main()

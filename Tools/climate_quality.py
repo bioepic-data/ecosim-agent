@@ -64,12 +64,17 @@ def sanitize_era5_dataframe(
     timestamp_col: str = "timestamp_start",
     elevation_m: Optional[Any] = None,
     frequency: str = "30min",
+    index_start: Optional[Any] = None,
+    index_end: Optional[Any] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Mask physically invalid ERA5 values and gap-fill them by time interpolation.
 
     The function also reindexes to the expected half-hourly source cadence so
     true gaps in the input stream are treated the same way as invalid values.
+    ``index_start``/``index_end`` fix the reindexed span (e.g. the original record
+    span after a time-registration shift); rows outside it are dropped and steps
+    missing at the edges are filled from the nearest valid value.
     """
 
     if timestamp_col not in df.columns:
@@ -98,11 +103,10 @@ def sanitize_era5_dataframe(
         return working, report
 
     working = working.set_index(timestamp_col)
-    expected_index = pd.date_range(
-        working.index.min(),
-        working.index.max(),
-        freq=frequency,
-    )
+    span_start = pd.Timestamp(index_start) if index_start is not None else working.index.min()
+    span_end = pd.Timestamp(index_end) if index_end is not None else working.index.max()
+    working = working.loc[(working.index >= span_start) & (working.index <= span_end)]
+    expected_index = pd.date_range(span_start, span_end, freq=frequency)
     missing_steps = expected_index.difference(working.index)
     report["missing_half_hour_steps_filled"] = int(len(missing_steps))
     working = working.reindex(expected_index)

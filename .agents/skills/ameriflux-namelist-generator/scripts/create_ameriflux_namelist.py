@@ -38,14 +38,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--clm-factor-in", default="NO")
     parser.add_argument("--soil-mgmt-in", default="NO")
     parser.add_argument("--lignification", choices=("true", "false"), default="false")
-    parser.add_argument("--start-year", type=int, help="Simulation start year used in start_date")
+    parser.add_argument("--start-year", type=int, help="Simulation start year used in start_date; default force_start_year minus spinup years")
     parser.add_argument("--force-start-year", type=int, help="First climate forcing year")
     parser.add_argument("--spinup-end-year", type=int, help="Last climate forcing year used for spinup")
     parser.add_argument("--force-end-year", type=int, help="Last climate forcing year")
     parser.add_argument("--spinup-cycles", type=int, default=18)
     parser.add_argument("--regular-cycles", type=int, default=1)
     parser.add_argument("--final-cycles", type=int, default=0)
-    parser.add_argument("--stop-n", type=int, help="ecosim_time stop_n; default force_end_year - start_year + 1")
+    parser.add_argument("--stop-n", type=int, help="ecosim_time stop_n; default spinup years plus regular/final forcing years")
     parser.add_argument("--hist-mfilt", type=int, default=7300)
     parser.add_argument("--hist-nhtfrq", default="-24")
     parser.add_argument("--npxs", default="30,30,30")
@@ -84,8 +84,14 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     force_start, force_end = resolve_forcing_years(args, climate_file, repo_root)
     spinup_end = args.spinup_end_year or min(force_end, force_start + 3)
-    start_year = args.start_year or force_start
-    stop_n = args.stop_n or max(1, force_end - start_year + 1)
+    # Spinup cycles run before the regular forcing period, so by default the
+    # simulation starts that many years before force_start and stop_n covers
+    # spinup plus the regular (and final) periods. A stop_n of only
+    # force_end - start + 1 would end the run inside spinup.
+    spinup_years = (spinup_end - force_start + 1) * args.spinup_cycles
+    regular_years = (force_end - force_start + 1) * (args.regular_cycles + args.final_cycles)
+    start_year = args.start_year or force_start - spinup_years
+    stop_n = args.stop_n or max(1, spinup_years + regular_years)
     forc_periods = (
         f"{force_start},{spinup_end},{args.spinup_cycles},"
         f"{force_start},{force_end},{args.regular_cycles},"
@@ -144,6 +150,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 def discover_site_file(repo_root: Path, site_id: str, tokens: tuple[str, ...], suffixes: tuple[str, ...]) -> Optional[Path]:
     search_roots = [
+        repo_root / "result" / site_id / "input",
         repo_root / "data",
         repo_root / "result" / site_id,
         repo_root / "result",

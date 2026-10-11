@@ -1,6 +1,6 @@
 ---
 name: ameriflux-namelist-generator
-description: Create EcoSIM Fortran namelist files and workable EcoSIM run folders for AmeriFlux site runs from site-specific grid, plant management, climate forcing, and greenhouse-gas inputs. Use when preparing or updating an EcoSIM `.namelist`, run folder, runfolder, run directory, or executable-ready site case for AmeriFlux or FLUXNET sites, especially after generating `*_ecosim_grid.nc`, `*_ecosim_climate.nc`, and `*_pft_mgmt.nc` inputs.
+description: Create EcoSIM Fortran namelist files and workable EcoSIM run folders for AmeriFlux site runs from site-specific grid, plant management, climate forcing, and greenhouse-gas inputs. Use when preparing or updating an EcoSIM `.namelist`, run folder, runfolder, run directory, or executable-ready site case for AmeriFlux or FLUXNET sites, especially after generating `*_ecosim_grid.nc`, `*_ecosim_climate_<first>-<last>.nc`, and `*_pft_mgmt.nc` inputs.
 ---
 
 # AmeriFlux Namelist Generator
@@ -13,12 +13,14 @@ Read [references/namelist_contract.md](references/namelist_contract.md) when you
 
 For any request to create a run folder, runfolder, run directory, or runnable site case, read and follow [references/runfolder_workflow.md](references/runfolder_workflow.md) before writing files.
 
+When asked to create a run folder for a site, build it under `result/<SITE_ID>/` with two subfolders: `input/` for every input file (site NetCDF, sidecars, reports, and copies of the PFT, GHG, and microbial parameter files) and `run_dir/` for the namelist alone. Use `scripts/create_site_run_folder.py --site-id <SITE_ID>` after the site inputs exist, and track the request with the `ecosim-site-run-tracker` skill.
+
 ## Workflow
 
 1. Identify the AmeriFlux `site_id` such as `US-Ha1`, `US-MMS`, or `US-Var`.
 2. Confirm that site artifacts exist. Prefer:
    - `result/<SITE_ID>/<SITE_ID>_ecosim_grid.nc`
-   - `result/<SITE_ID>/<SITE_ID>_ecosim_climate.nc`
+   - `result/<SITE_ID>/<SITE_ID>_ecosim_climate_<first>-<last>.nc` (climate files carry their forcing years)
    - `result/<SITE_ID>/<SITE_ID>_pft_mgmt.nc`
    - `result/<SITE_ID>/<SITE_ID>_ecosim_site.json`
    Then search `result/`, `inputs/`, `data/`, and the repository root.

@@ -401,6 +401,10 @@ def main():
         years,
         args,
     )
+    # Name the file by the forcing years it contains (e.g. *_1940-2024.nc).
+    from Tools.climate_naming import finalize_climate_file_name
+
+    args.output = str(finalize_climate_file_name(args.output))
     write_forcing_yaml(args.forcing_yaml, args.output)
 
     report = {

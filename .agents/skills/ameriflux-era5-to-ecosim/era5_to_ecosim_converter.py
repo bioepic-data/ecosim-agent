@@ -23,11 +23,39 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+from Tools.climate_naming import finalize_climate_file_name
 from Tools.climate_quality import sanitize_era5_dataframe
 
 
 FILL_VALUE_THRESHOLD = 1.0e29
 DEFAULT_COMPARISON_MIN_PAIRS = 720
+# Warn when ZNOONG and the radiation-weighted diurnal centroid disagree by more
+# than this many hours; EcoSIM caps hourly SRADH by the sun angle from ZNOONG.
+SOLAR_NOON_MISMATCH_WARNING_HOURS = 0.75
+# Warn when the forcing and tower SW_IN diurnal centroids differ by more than this.
+CLOCK_LAG_WARNING_HOURS = 0.5
+# ERA5-to-tower time registration: lags searched (hours), minimum measured
+# pairs, and the correlation gain a non-zero lag needs over zero lag.
+TIME_REGISTRATION_MAX_LAG_HOURS = 3.0
+TIME_REGISTRATION_MIN_PAIRS = 2000
+TIME_REGISTRATION_MIN_CORRELATION_GAIN = 0.01
+TIME_REGISTRATION_MODES = ("auto", "check", "off")
+
+
+def saturation_vapor_pressure_kpa(temp_c):
+    """Saturation vapor pressure (kPa), matching EcoSIM MiniMathMod vapsat0."""
+    temp_k = np.asarray(temp_c, dtype=float) + 273.15
+    return 0.61 * np.exp(5360.0 * (3.661e-3 - 1.0 / temp_k))
+
+
+def vapor_pressure_from_vpd_kpa(temp_c, vpd_hpa):
+    """Actual vapor pressure (kPa) from air temperature (degC) and VPD (hPa).
+
+    EcoSIM reads DWPTH as atmospheric vapor pressure (WthrMod: VPK=min(DWPTH,VPS)),
+    so AmeriFlux VPD must be converted rather than written directly.
+    """
+    es = saturation_vapor_pressure_kpa(temp_c)
+    return np.clip(es - np.asarray(vpd_hpa, dtype=float) * 0.1, 0.0, es)
 
 # These are broad operational screens for detecting forcing failures, not
 # universal performance targets for ERA5 at flux-tower scale.
@@ -62,9 +90,11 @@ IN_SITU_COMPARISON_SPECS = {
         "relative_total_min_observed": 10.0,
     },
     "DWPTH": {
+        # Observed VPD (hPa) is converted to vapor pressure with measured TA.
         "candidates": (("VPD_F", "VPD_F_QC"), ("VPD", None)),
+        "temperature_candidates": (("TA_F", "TA_F_QC"), ("TA", None)),
         "aggregation": "mean",
-        "scale": 0.1,
+        "scale": 1.0,
         "units": "kPa",
         "valid_range": (0.0, 100.0),
         "max_abs_mean_bias": 0.30,
@@ -193,6 +223,158 @@ def discover_in_situ_file(era5_file, site_id=None):
     return None
 
 
+def load_tower_shortwave(in_situ_file):
+    """Measured-only tower SW_IN (W m-2) indexed by TIMESTAMP_START, or None."""
+
+    header = set(pd.read_csv(in_situ_file, nrows=0).columns)
+    value_column, qc_column = _choose_observation_column(
+        header, IN_SITU_COMPARISON_SPECS["SRADH"]
+    )
+    if "TIMESTAMP_START" not in header or value_column is None:
+        return None, None
+    columns = ["TIMESTAMP_START", value_column] + ([qc_column] if qc_column else [])
+    tower = pd.read_csv(in_situ_file, usecols=columns, dtype={"TIMESTAMP_START": str})
+    timestamps = pd.to_datetime(tower["TIMESTAMP_START"], format="%Y%m%d%H%M", errors="coerce")
+    values = pd.to_numeric(tower[value_column], errors="coerce")
+    valid = timestamps.notna() & np.isfinite(values) & values.between(0.0, 1400.0)
+    if qc_column:
+        valid &= pd.to_numeric(tower[qc_column], errors="coerce").eq(0)
+    series = pd.Series(values[valid].to_numpy(), index=timestamps[valid]).sort_index()
+    return series[~series.index.duplicated()], value_column
+
+
+def estimate_time_registration(era5_shortwave, tower_shortwave, frequency):
+    """Lag (hours) of the ERA5 clock relative to the tower clock.
+
+    A positive lag means an ERA5 value stamped t + lag belongs to tower time t,
+    i.e. the ERA5 file is late. Lags are searched in source-timestep steps by
+    maximising the Pearson correlation of shortwave radiation, and checked
+    against the difference of the radiation-weighted diurnal centroids.
+    """
+
+    step = pd.Timedelta(frequency)
+    step_hours = step.total_seconds() / 3600.0
+    max_steps = int(round(TIME_REGISTRATION_MAX_LAG_HOURS / step_hours))
+    era5_shortwave = era5_shortwave[~era5_shortwave.index.duplicated()]
+
+    correlations = {}
+    pairs = {}
+    for k in range(-max_steps, max_steps + 1):
+        shifted = pd.Series(era5_shortwave.to_numpy(), index=era5_shortwave.index - k * step)
+        joined = pd.concat([shifted.rename("era5"), tower_shortwave.rename("tower")], axis=1, join="inner").dropna()
+        pairs[k] = int(len(joined))
+        if len(joined) >= 2 and joined["era5"].std() > 0 and joined["tower"].std() > 0:
+            correlations[k] = float(np.corrcoef(joined["era5"], joined["tower"])[0, 1])
+
+    result = {
+        "step_hours": step_hours,
+        "pairs_at_zero_lag": pairs.get(0, 0),
+        "correlation_by_lag_hours": {f"{k * step_hours:+g}": round(r, 4) for k, r in correlations.items()},
+    }
+    if 0 not in correlations or pairs[0] < TIME_REGISTRATION_MIN_PAIRS:
+        result["status"] = "insufficient_overlap"
+        return result
+
+    best = max(correlations, key=correlations.get)
+    result.update(
+        {
+            "status": "estimated",
+            "lag_hours": best * step_hours,
+            "correlation_at_zero_lag": round(correlations[0], 4),
+            "correlation_at_lag": round(correlations[best], 4),
+        }
+    )
+
+    overlap = tower_shortwave.index.intersection(era5_shortwave.index)
+    era5_centroid = radiation_centroid_hour(
+        pd.DataFrame({"hour": overlap.hour, "SRADH": era5_shortwave.reindex(overlap).to_numpy()})
+    )
+    tower_centroid = radiation_centroid_hour(
+        pd.DataFrame({"hour": overlap.hour, "SRADH": tower_shortwave.reindex(overlap).to_numpy()})
+    )
+    if era5_centroid is not None and tower_centroid is not None:
+        result["centroid_lag_hours"] = round(wrap_hours(era5_centroid - tower_centroid), 4)
+    return result
+
+
+def register_era5_to_tower(df, frequency, in_situ_file=None, mode="auto", shift_hours=None):
+    """Shift ERA5 timestamps onto the tower clock.
+
+    Returns the (possibly shifted) frame and a report. A manual ``shift_hours``
+    (ERA5 lag relative to the tower) is applied as given. Otherwise, in "auto"
+    mode a detected lag is applied only when it improves the correlation by
+    TIME_REGISTRATION_MIN_CORRELATION_GAIN and agrees with the centroid lag to
+    within half an hour; "check" only reports; "off" skips the check.
+    """
+
+    if mode not in TIME_REGISTRATION_MODES:
+        raise ValueError(f"time registration mode must be one of {TIME_REGISTRATION_MODES}")
+    report = {"mode": mode, "in_situ_file": os.path.abspath(in_situ_file) if in_situ_file else None,
+              "applied_shift_hours": 0.0, "warning": None}
+
+    lag = None
+    if shift_hours is not None:
+        lag = float(shift_hours)
+        report["status"] = "manual"
+    elif mode == "off":
+        report["status"] = "skipped"
+    elif not in_situ_file:
+        report["status"] = "unverified"
+        report["reason"] = "No AmeriFlux FULLSET file to register ERA5 against."
+    else:
+        tower, column = load_tower_shortwave(in_situ_file)
+        if tower is None or tower.empty:
+            report["status"] = "unverified"
+            report["reason"] = "Tower file has no measured shortwave radiation."
+        else:
+            era5 = pd.Series(
+                pd.to_numeric(df["SW_IN_ERA"], errors="coerce").to_numpy(),
+                index=pd.DatetimeIndex(df["timestamp_start"]),
+            )
+            era5 = era5[np.isfinite(era5) & era5.between(0.0, 1400.0)]
+            estimate = estimate_time_registration(era5, tower, frequency)
+            estimate["tower_column"] = column
+            report.update(estimate)
+            if estimate["status"] == "estimated" and estimate["lag_hours"] != 0:
+                gain = estimate["correlation_at_lag"] - estimate["correlation_at_zero_lag"]
+                centroid_lag = estimate.get("centroid_lag_hours")
+                consistent = centroid_lag is not None and abs(centroid_lag - estimate["lag_hours"]) <= 0.5
+                if gain >= TIME_REGISTRATION_MIN_CORRELATION_GAIN and consistent:
+                    report["status"] = "misregistered"
+                    if mode == "auto":
+                        lag = estimate["lag_hours"]
+                    else:
+                        report["warning"] = (
+                            f"ERA5 clock is {estimate['lag_hours']:+g} h relative to the tower "
+                            "(not corrected: time registration mode 'check')."
+                        )
+                else:
+                    report["status"] = "ambiguous"
+                    report["warning"] = (
+                        f"Best ERA5-tower lag {estimate['lag_hours']:+g} h was not applied: "
+                        f"correlation gain {gain:.4f}, centroid lag {centroid_lag}."
+                    )
+            elif estimate["status"] == "estimated":
+                report["status"] = "registered"
+
+    if lag:
+        start, end = df["timestamp_start"].min(), df["timestamp_start"].max()
+        df = df.copy()
+        offset = pd.Timedelta(hours=lag)
+        df["timestamp_start"] = df["timestamp_start"] - offset
+        if "timestamp_end" in df:
+            df["timestamp_end"] = df["timestamp_end"] - offset
+        report["applied_shift_hours"] = -lag
+        report["record_span"] = [start.isoformat(), end.isoformat()]
+        report["note"] = (
+            f"ERA5 timestamps shifted by {-lag:+g} h onto the tower clock; the record "
+            "span is kept and edge steps are filled from the nearest valid value."
+        )
+        if report["status"] == "misregistered":
+            report["status"] = "corrected"
+    return df, report
+
+
 def read_ecosim_hourly_forcing(netcdf_file):
     """Read the generated EcoSIM NetCDF back into an hourly table."""
 
@@ -236,8 +418,20 @@ def load_in_situ_hourly(in_situ_file):
 
     selected = {"TIMESTAMP_START"}
     choices = {}
+    temperature_choices = {}
     for forcing_variable, spec in IN_SITU_COMPARISON_SPECS.items():
         value_column, qc_column = _choose_observation_column(header, spec)
+        if value_column and "temperature_candidates" in spec:
+            temp_column, temp_qc_column = _choose_observation_column(
+                header, {"candidates": spec["temperature_candidates"]}
+            )
+            if temp_column is None:
+                value_column, qc_column = None, None
+            else:
+                temperature_choices[forcing_variable] = (temp_column, temp_qc_column)
+                selected.add(temp_column)
+                if temp_qc_column:
+                    selected.add(temp_qc_column)
         choices[forcing_variable] = (value_column, qc_column)
         if value_column:
             selected.add(value_column)
@@ -280,6 +474,17 @@ def load_in_situ_hourly(in_situ_file):
         if qc_column:
             qc = pd.to_numeric(observations[qc_column], errors="coerce")
             valid &= qc.eq(0)
+        if forcing_variable in temperature_choices:
+            temp_column, temp_qc_column = temperature_choices[forcing_variable]
+            temperature = pd.to_numeric(observations[temp_column], errors="coerce")
+            valid &= np.isfinite(temperature) & temperature.between(-90.0, 60.0)
+            if temp_qc_column:
+                temp_qc = pd.to_numeric(observations[temp_qc_column], errors="coerce")
+                valid &= temp_qc.eq(0)
+            values = pd.Series(
+                vapor_pressure_from_vpd_kpa(temperature, values),
+                index=values.index,
+            )
 
         measured = pd.DataFrame(
             {
@@ -436,11 +641,31 @@ def compare_forcing_with_in_situ(netcdf_file, in_situ_file, min_pairs=DEFAULT_CO
             )
         else:
             metrics["pearson_correlation"] = None
+        if variable == "SRADH":
+            # A whole-hour clock shift leaves mean bias near zero, so compare the
+            # diurnal radiation centroids over the same paired hours.
+            hours = paired["timestamp_start"].dt.hour
+            forcing_centroid = radiation_centroid_hour(
+                pd.DataFrame({"hour": hours, "SRADH": forcing_values})
+            )
+            observed_centroid = radiation_centroid_hour(
+                pd.DataFrame({"hour": hours, "SRADH": observed_values})
+            )
+            if forcing_centroid is not None and observed_centroid is not None:
+                metrics["diurnal_centroid_lag_hours"] = wrap_hours(
+                    forcing_centroid - observed_centroid
+                )
         variable_report.update(metrics)
 
         if paired_hours >= min_pairs:
             sufficient_variables += 1
             reasons = _large_difference_reasons(metrics, spec)
+            lag = metrics.get("diurnal_centroid_lag_hours")
+            if lag is not None and abs(lag) > CLOCK_LAG_WARNING_HOURS:
+                reasons.append(
+                    f"diurnal radiation centroid lags the tower by {lag:+.2f} h "
+                    "(forcing clock likely shifted)"
+                )
             if reasons:
                 warning = {
                     "variable": variable,
@@ -474,6 +699,9 @@ def convert_era5_to_ecosim(
     in_situ_file=None,
     compare_in_situ=True,
     comparison_min_pairs=DEFAULT_COMPARISON_MIN_PAIRS,
+    utc_offset_hours=None,
+    time_registration="auto",
+    time_shift_hours=None,
 ):
     """
     Convert ERA5 half-hourly data to ECOSIM hourly format.
@@ -483,6 +711,11 @@ def convert_era5_to_ecosim(
     output_file (str): Path to output netCDF file
     longitude (float): Longitude for solar noon calculation
     in_situ_file (str): Optional AmeriFlux FULLSET HH/HR file for validation
+    utc_offset_hours (float): UTC offset of the CSV timestamps; inferred when None
+    time_registration (str): "auto" shifts ERA5 onto the tower clock when a lag
+        is detected, "check" only reports it, "off" skips the check
+    time_shift_hours (float): Known ERA5 lag relative to the tower (hours);
+        applied directly, overriding detection
     """
 
     # Read the CSV data with dtype specification to avoid automatic conversion
@@ -492,16 +725,41 @@ def convert_era5_to_ecosim(
     df['timestamp_start'] = df['TIMESTAMP_START'].apply(parse_timestamps)
     df['timestamp_end'] = df['TIMESTAMP_END'].apply(parse_timestamps)
     source_frequency = infer_source_frequency(df['timestamp_start'])
+    record_start = df['timestamp_start'].min()
+    record_end = df['timestamp_start'].max()
+
+    # Coregister ERA5 with the tower clock before QC and hourly aggregation.
+    registration_in_situ = in_situ_file
+    if registration_in_situ is None and time_registration != "off":
+        registration_in_situ = discover_in_situ_file(era5_file, site_id)
+    df, registration = register_era5_to_tower(
+        df,
+        source_frequency,
+        in_situ_file=registration_in_situ,
+        mode=time_registration,
+        shift_hours=time_shift_hours,
+    )
+    if registration["applied_shift_hours"]:
+        print(f"Time registration: {registration['note']}")
+    if registration["warning"]:
+        print(f"WARNING: {registration['warning']}", file=sys.stderr)
+
     df, quality_report = sanitize_era5_dataframe(
         df,
         elevation_m=elevation,
         frequency=source_frequency,
+        index_start=record_start,
+        index_end=record_end,
     )
+    quality_report["time_registration"] = registration
 
     # Convert to hourly data by averaging consecutive half-hourly values.
     df['hour'] = df['timestamp_start'].dt.hour
     df['day_of_year'] = df['timestamp_start'].dt.dayofyear
     df['year'] = df['timestamp_start'].dt.year
+    # Convert VPD to vapor pressure before averaging so each half-hour uses its
+    # own saturation vapor pressure.
+    df['EA_KPA'] = vapor_pressure_from_vpd_kpa(df['TA_ERA'], df['VPD_ERA'])
 
     hourly_df = (
         df.groupby(['year', 'day_of_year', 'hour'], as_index=False)
@@ -509,17 +767,19 @@ def convert_era5_to_ecosim(
             TMPH=('TA_ERA', 'mean'),
             WINDH=('WS_ERA', 'mean'),
             RAINH=('P_ERA', 'sum'),
-            DWPTH=('VPD_ERA', 'mean'),
+            DWPTH=('EA_KPA', 'mean'),
             SRADH=('SW_IN_ERA', 'mean'),
             PATM=('PA_ERA', 'mean'),
         )
         .rename(columns={'day_of_year': 'day'})
     )
-    # AmeriFlux ERA5 reports VPD_ERA in hPa; EcoSIM climate files use kPa.
-    hourly_df['DWPTH'] = hourly_df['DWPTH'] / 10.0
-
     # Create the netCDF file
-    create_ecosim_climate_file(hourly_df, output_file, longitude)
+    solar_noon = create_ecosim_climate_file(
+        hourly_df, output_file, longitude, utc_offset_hours=utc_offset_hours
+    )
+    quality_report["solar_noon"] = solar_noon
+    if solar_noon["warning"]:
+        print(f"WARNING: {solar_noon['warning']}", file=sys.stderr)
 
     if compare_in_situ:
         selected_in_situ_file = in_situ_file or discover_in_situ_file(era5_file, site_id)
@@ -547,6 +807,14 @@ def convert_era5_to_ecosim(
             "variables": {},
             "warnings": [],
         }
+
+    # Name the file by the forcing years it contains, e.g.
+    # US-UMB_ecosim_climate_1981-2021.nc. Intermediate files that do not end in
+    # .nc (such as the climate tool's *.nc.temp) are left for the caller to name.
+    if str(output_file).endswith(".nc"):
+        output_file = str(finalize_climate_file_name(output_file))
+        print(f"Climate forcing written to {output_file}")
+    quality_report["output_file"] = os.path.abspath(output_file)
 
     # Record the output in a YAML file
     try:
@@ -581,63 +849,85 @@ def convert_era5_to_ecosim(
             json.dump(quality_report, f, indent=2)
     return quality_report
 
-def calculate_solar_noon_utc(year, month, day, longitude):
-  """
-  Calculates the time of solar noon in Coordinated Universal Time (UTC).
+def radiation_centroid_hour(df):
+    """Radiation-weighted mean hour of the diurnal SRADH cycle on the forcing clock.
 
-  Solar noon is the time when the sun is at its highest point in the sky
-  (transiting the local celestial meridian).
+    Hour index h holds the average over [h, h+1), so its midpoint is h + 0.5.
+    A circular mean keeps the result valid when the daylight period wraps midnight.
+    """
+    profile = df.groupby('hour')['SRADH'].mean().clip(lower=0.0)
+    if profile.sum() <= 0.0:
+        return None
+    angles = 2.0 * np.pi * (profile.index.to_numpy(dtype=float) + 0.5) / 24.0
+    weights = profile.to_numpy(dtype=float)
+    angle = math.atan2((weights * np.sin(angles)).sum(), (weights * np.cos(angles)).sum())
+    return (angle * 24.0 / (2.0 * np.pi)) % 24.0
 
-  This calculation depends on the date (for Equation of Time) and longitude.
-  Latitude is not required for the *time* of solar noon, but is included
-  in this function's parameters as requested.
 
-  Args:
-    year (int): The year (e.g., 2024).
-    month (int): The month (1-12).
-    day (int): The day (1-31).
-    longitude (float): The observer's longitude in degrees.
-                       (Positive for East, Negative for West).
-    
+def wrap_hours(value):
+    """Wrap an hour difference into [-12, 12)."""
+    return (value + 12.0) % 24.0 - 12.0
 
-  Returns:
-    float: The time of solar noon in UTC hours (e.g., 12.5 = 12:30 PM UTC).
-  """
-  
-  # 1. Calculate the Day of the Year (DOY)
-  d = datetime(year, month, day)
-  doy = d.timetuple().tm_yday
 
-  # 2. Calculate the Equation of Time (EoT) in minutes
-  # This is a common approximation
-  # B is in degrees
-  B_deg = (360 / 365.24) * (doy - 81)
-  # B is in radians
-  B_rad = math.radians(B_deg)
-  
-  eot = 9.87 * math.sin(2 * B_rad) - 7.53 * math.cos(B_rad) - 1.5 * math.sin(B_rad)
-  
-  # 3. Calculate Solar Noon in minutes from UTC midnight
-  # 720 = 12:00 (noon) in minutes (12 * 60)
-  # 4 * longitude = longitude correction in minutes (Earth rotates 1 degree in 4 mins)
-  # We subtract eot from the mean solar noon
-  
-  solar_noon_minutes_from_utc_midnight = 720 - (4 * longitude) - eot
-  
-  # 4. Convert the minutes into hours
-  solar_noon_utc_hours = solar_noon_minutes_from_utc_midnight / 60
-  
-  return solar_noon_utc_hours
+def infer_utc_offset_hours(df, longitude):
+    """Infer the forcing clock's whole-hour UTC offset from the diurnal SRADH cycle.
 
-def create_ecosim_climate_file(df, output_file, longitude):
+    AmeriFlux timestamps are local standard time, but the offset is not stored in
+    the CSV, and rounding longitude/15 fails for sites west of their zone meridian
+    (e.g. US-UMB at -84.7 deg uses UTC-5, not UTC-6).
+    """
+    centroid = radiation_centroid_hour(df)
+    if centroid is None:
+        raise ValueError("Cannot infer UTC offset: SRADH has no positive values.")
+    return int(round(wrap_hours(centroid - (12.0 - longitude / 15.0))))
+
+
+def mean_solar_noon_hour(longitude, utc_offset_hours):
+    """Mean solar noon (hours) on the forcing clock.
+
+    EcoSIM DayMod adds the daily equation of time to ZNOONG, so it is not
+    included here.
+    """
+    return (12.0 - longitude / 15.0 + utc_offset_hours) % 24.0
+
+
+def create_ecosim_climate_file(df, output_file, longitude, utc_offset_hours=None):
     """
     Create ECOSIM climate forcing netCDF file from hourly data.
 
     Parameters:
-    df (DataFrame): Hourly climate data
+    df (DataFrame): Hourly climate data on the AmeriFlux (local standard time) clock
     output_file (str): Path to output netCDF file
     longitude (float): Longitude of the site for solar noon calculation
+    utc_offset_hours (float): UTC offset of the forcing clock; inferred from the
+        diurnal SRADH cycle when None
+
+    Returns:
+    dict: Solar-noon derivation and consistency check for the quality report
     """
+
+    centroid = radiation_centroid_hour(df)
+    if utc_offset_hours is None:
+        utc_offset_hours = infer_utc_offset_hours(df, longitude)
+        offset_source = "inferred_from_SRADH_diurnal_cycle"
+    else:
+        offset_source = "user_supplied"
+    znoong = mean_solar_noon_hour(longitude, utc_offset_hours)
+    mismatch = None if centroid is None else wrap_hours(centroid - znoong)
+    solar_noon = {
+        "ZNOONG_hours": round(znoong, 4),
+        "utc_offset_hours": utc_offset_hours,
+        "utc_offset_source": offset_source,
+        "SRADH_centroid_hour": None if centroid is None else round(centroid, 4),
+        "centroid_minus_ZNOONG_hours": None if mismatch is None else round(mismatch, 4),
+        "warning": None,
+    }
+    if mismatch is not None and abs(mismatch) > SOLAR_NOON_MISMATCH_WARNING_HOURS:
+        solar_noon["warning"] = (
+            f"ZNOONG={znoong:.2f} h differs from the SRADH diurnal centroid "
+            f"{centroid:.2f} h by {mismatch:+.2f} h; EcoSIM will clip radiation "
+            "with a misplaced sun angle. Check the UTC offset."
+        )
 
     # Create a new netCDF file
     nc_file = Dataset(output_file, 'w', format='NETCDF4')
@@ -699,6 +989,10 @@ def create_ecosim_climate_file(df, output_file, longitude):
     znoong_var = nc_file.createVariable('ZNOONG', 'f4', ('year', 'ngrid'), fill_value=1e30)
     znoong_var.long_name = "time of solar noon"
     znoong_var.units = "hour"
+    znoong_var.note = (
+        f"Mean solar noon on the forcing clock (UTC{utc_offset_hours:+g}, {offset_source}); "
+        "EcoSIM adds the daily equation of time."
+    )
 
     # Create a simple mapping of years to indices
     unique_years = sorted(df['year'].unique())
@@ -726,12 +1020,13 @@ def create_ecosim_climate_file(df, output_file, longitude):
     for i, year in enumerate(unique_years):
         z0g_var[i, 0] = 1.0  # Fixed value
         iflgw_var[i, 0] = 0  # Fixed value
-        znoong_var[i, 0] = calculate_solar_noon_utc(year, 6, 1, longitude)  # Fixed value
+        znoong_var[i, 0] = znoong
 
     # Close the file
     nc_file.close()
 
     print(f"ECOSIM climate file created successfully: {output_file}")
+    return solar_noon
 
 def main():
     parser = argparse.ArgumentParser(description='Convert Ameriflux ERA5 half-hourly climate data to ECOSIM hourly format')
@@ -757,19 +1052,40 @@ def main():
         action='store_true',
         help='Disable comparison against an available AmeriFlux FULLSET file',
     )
-    
+    parser.add_argument(
+        '--utc-offset',
+        type=float,
+        default=None,
+        help='UTC offset (hours) of the CSV timestamps, e.g. -5 for EST; '
+             'inferred from the diurnal SW_IN cycle when omitted',
+    )
+    parser.add_argument(
+        '--time-registration',
+        choices=TIME_REGISTRATION_MODES,
+        default='auto',
+        help='Coregister ERA5 with the tower clock using SW_IN cross-correlation: '
+             'auto (detect and shift, default), check (report only), off',
+    )
+    parser.add_argument(
+        '--time-shift-hours',
+        type=float,
+        default=None,
+        help='Known ERA5 lag relative to the tower in hours (positive = ERA5 late); '
+             'applied directly instead of detection',
+    )
+
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
-        print(f"Error: Input file {args.input} does not exist")
-        return
+        print(f"Error: Input file {args.input} does not exist", file=sys.stderr)
+        sys.exit(1)
 
     # Get longitude and elevation from site info
     site_data = get_site_metadata(args.site_id)
     longitude = site_data.get('ALONG') if site_data else None
     if longitude is None:
-        print(f"Error: Could not get longitude for site {args.site_id}")
-        return
+        print(f"Error: Could not get longitude for site {args.site_id}", file=sys.stderr)
+        sys.exit(1)
     elevation = site_data.get('ALTIG') if site_data else None
 
     print(f"Using longitude {longitude} for site {args.site_id}")
@@ -783,6 +1099,9 @@ def main():
         in_situ_file=args.in_situ,
         compare_in_situ=not args.skip_in_situ_comparison,
         comparison_min_pairs=args.comparison_min_pairs,
+        utc_offset_hours=args.utc_offset,
+        time_registration=args.time_registration,
+        time_shift_hours=args.time_shift_hours,
     )
     print("Conversion completed successfully!")
 

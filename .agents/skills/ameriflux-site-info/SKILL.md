@@ -35,6 +35,22 @@ Use deterministic sources in this order:
 
 Always inspect the extracted values for physical and ecological plausibility before using them in EcoSIM inputs.
 
+## Location Cross-Checks
+
+AmeriFlux pages put each value on its own line under a label (`Lat, Long:` then `-16.4980, -56.4120`). Line cleanup must never strip a leading minus sign: an earlier version did, turning southern latitudes (BR-Npw, CL-SDF), sub-zero MAT (US-Brw -12.6, US-Prr -2), and below-sea-level elevation (US-Myb -4) positive. Every extraction is now cross-checked, and the result is stored in `_location_validation`:
+
+| Check | Evidence | On failure |
+| --- | --- | --- |
+| `page_signs` | Each parsed latitude, longitude, elevation, and MAT appears with the same sign in the raw page text under its label | error |
+| `country_bounds` | Coordinates fall inside the envelope of the country in the site-ID prefix (`BR-`, `CL-`, `US-`, ...); the message says when the opposite sign would fit | error |
+| `description_region` | Region words in the site Description or name (South America, Pantanal, Amazon, Patagonia, Alaska, Arctic, ...) agree with the latitude | warning |
+| `koppen_consistency` | MAT lies in a plausible range for the Koppen group (A 15 to 35, C -3 to 30, D -25 to 16, E -60 to 8 degC); tropical classes within 35 deg latitude | warning |
+| `koppen_from_coordinates` | The page Koppen class appears in the 3x3 neighbourhood of the parsed coordinates on a gridded Beck et al. (2018) Koppen-Geiger map; when it fits the opposite-sign latitude or longitude instead, the warning says to suspect a lost minus sign | warning |
+
+The Koppen map is a NetCDF with `ids(lat, lon)` indexing a `labels` list, such as the ILAMB `regions/Koppen.nc` 0.5-degree product (Beck et al. 2018, Sci. Data 5:180214). Pass `--koppen-raster PATH`, set `ECOSIM_KOPPEN_RASTER`, or place it at `data/Koppen.nc`; without it the check reports `not_available`. A plain mismatch (e.g. US-MMS page `Cfa`, map `Dfa`) usually reflects a class boundary or a different climatology, so it is a warning, not a coordinate error.
+
+Errors stop the extraction without writing JSON. Cached JSON is validated too; a cached file that fails is refetched automatically. Use `--skip-location-check` only after confirming the coordinates by hand. Warnings are printed and kept in the JSON; review them before building forcing. The checks are offline and catch sign and gross-location errors, not small coordinate errors inside the right country.
+
 ## 1. Site Metadata Extraction (Flux Network)
 Given an AmeriFlux site name or ID (e.g., "Blodgett Forest" or "US-Blo"), read cached metadata or parse the rendered AmeriFlux site page text, then map the extracted values to the required EcoSIM JSON variables.
 

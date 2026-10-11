@@ -118,6 +118,7 @@ For US grids in the same auxiliary-data domain used by the US/AmeriFlux workflow
 - `CNORIG`: NO3-N concentration in precipitation.
 - `CSORG`: SO4-S concentration in precipitation.
 - `CCARG`: Ca concentration in precipitation.
+- The output NetCDF is renamed if needed so its name carries the forcing years it contains (e.g. `_1940_2024.nc` is kept; a name without years gets `_<first>-<last>.nc`).
 - Other template chemistry variables supported by `Tools/create_ecosim_climate_forcing.py`, including `CMGRG`, `CNARG`, `CKARG`, and `CCLRG` when NADP source rasters exist.
 
 NADP values are validated the same way as US/AmeriFlux climate forcing: reject NoData, non-finite, negative concentrations, and pH outside `0-14`; fill annual gaps by linear interpolation with nearest-edge filling; if no valid `PHRG` exists, use neutral `PHRG=7` and record the fallback. Use `--add-us-chemistry never` to skip this for a US grid, or `--add-us-chemistry always` to force it. Use `--chemistry-input` to point to another NADP raster directory and `--chemistry-output` to set the intermediate JSON path.

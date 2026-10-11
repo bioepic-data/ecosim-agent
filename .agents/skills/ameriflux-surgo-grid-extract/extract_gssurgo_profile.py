@@ -28,6 +28,7 @@ import argparse
 import json
 import re
 import sqlite3
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -1052,6 +1053,21 @@ def main() -> None:
         output.setdefault("fallbacks", {})["gssurgo_failure"] = errors
     elif output is None:
         raise RuntimeError("; ".join(errors) if errors else "No soil data source was available")
+    elif errors:
+        # gSSURGO succeeded but the FAO fallback could not run; keep the reason so
+        # remaining missing layers are not mistaken for "no fallback needed".
+        output.setdefault("fallbacks", {})["fao_hwsd2_failure"] = errors
+        for message in errors:
+            print(f"WARNING: {message}", file=sys.stderr)
+
+    missing = {
+        varname: [index + 1 for index, source in enumerate(sources) if source == "missing"]
+        for varname, sources in output.get("sources_by_variable", {}).items()
+    }
+    missing = {varname: layers for varname, layers in missing.items() if layers}
+    if missing:
+        output["missing_layers_by_variable"] = missing
+        print(f"WARNING: soil layers still missing after fallback: {missing}", file=sys.stderr)
 
     Path(args.out).write_text(json.dumps(output, indent=2))
     print(

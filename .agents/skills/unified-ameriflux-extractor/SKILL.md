@@ -90,7 +90,7 @@ python .agents/skills/unified-ameriflux-extractor/unified_ameriflux_extractor.py
 ```
 - `--site-id` is optional if latitude/longitude are provided directly, but required when generating EcoSIM climate or grid forcing files.
 - If `--gssurgo-gdb`, `--gssurgo-template`, and `--gssurgo-out` are omitted, the gSSURGO extraction step is skipped.
-- `--climate-output` (optional) specifies where to write the EcoSIM climate forcing NetCDF file. The script will invoke the climate forcing script located at `Tools/create_ecosim_climate_forcing.py`.
+- `--climate-output` (optional) specifies where to write the EcoSIM climate forcing NetCDF file; the file is renamed to carry its forcing years, e.g. `result/US-UMB/US-UMB_ecosim_climate_1981-2021.nc`, and that final path is used for the namelist and YAML record. The script will invoke the climate forcing script located at `Tools/create_ecosim_climate_forcing.py`.
 - `--grid-output` (optional) specifies where to write the EcoSIM grid forcing NetCDF file. The script will invoke the grid forcing script located at `Tools/create_ecosim_grid_forcing.py`.
 - `--climate-data-dir` points to the directory containing ERA5 files (default: `data`).
 - `--result-dir` is the directory for intermediate results (default: `result`).
