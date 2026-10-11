@@ -108,12 +108,16 @@ def run_site_info(site_id, output_dir="result"):
 
 def find_era5_file(site_id, data_dir="data"):
     """Find the ERA5 CSV file for the site."""
-    # Look for directories starting with AMF_<site_id>. Some local archives,
-    # such as data/amf300, are symlinked and add another directory level.
+    # Look for directories starting with AMF_<site_id>. Local archives nest
+    # them under container folders such as data/amf300 or
+    # data/AMF300SiteData/Data, so descend into any folder whose name mentions
+    # AmeriFlux or data, but not into unrelated large trees (gSSURGO, tDEP).
     for root, dirs, files in os.walk(data_dir, followlinks=True):
         dirs[:] = [
             directory for directory in dirs
-            if directory.startswith("AMF_") or directory.lower() in {"amf300", "data"}
+            if directory.startswith("AMF_")
+            or "amf" in directory.lower()
+            or directory.lower() == "data"
         ]
         if not os.path.basename(root).startswith(f"AMF_{site_id}_"):
             continue
@@ -130,8 +134,14 @@ def run_era5_conversion(era5_file, output_file, site_id, quality_report_file=Non
         cmd.extend(["--quality-report", quality_report_file])
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
     if result.returncode != 0:
-        print(f"Error running ERA5 conversion: {result.stderr}")
+        print(f"Error running ERA5 conversion: {result.stderr}", file=sys.stderr)
         return False
+    if not os.path.exists(output_file):
+        print(f"ERA5 conversion reported success but did not write {output_file}", file=sys.stderr)
+        return False
+    # Relay converter warnings (solar noon, clock shift, large biases).
+    if result.stderr.strip():
+        print(result.stderr.strip(), file=sys.stderr)
     return True
 
 def extract_chemistry(lat, lon, years, output_file, chem_dir="data/nadp_data_grids"):
@@ -327,8 +337,8 @@ def main():
     print("Step 1: Extracting site information...")
     site_data = run_site_info(site_id, result_dir)
     if not site_data:
-        print("Failed to extract site information")
-        return
+        print("Failed to extract site information", file=sys.stderr)
+        sys.exit(1)
 
     lat = site_data['ALATG']
     lon = site_data['ALONG']
@@ -338,8 +348,8 @@ def main():
     print("Step 2: Finding ERA5 data file...")
     era5_file = find_era5_file(site_id, data_dir)
     if not era5_file:
-        print(f"ERA5 file not found for site {site_id}")
-        return
+        print(f"ERA5 file not found for site {site_id} under {data_dir}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Found ERA5 file: {era5_file}")
 
@@ -352,8 +362,8 @@ def main():
     temp_nc = args.output + '.temp'
     era5_quality_report_file = f"{result_dir}/{site_id}_era5_quality_report.json"
     if not run_era5_conversion(era5_file, temp_nc, site_id, era5_quality_report_file):
-        print("Failed to convert ERA5 data")
-        return
+        print("Failed to convert ERA5 data", file=sys.stderr)
+        sys.exit(1)
     era5_quality_report = None
     if os.path.exists(era5_quality_report_file):
         with open(era5_quality_report_file, "r") as f:

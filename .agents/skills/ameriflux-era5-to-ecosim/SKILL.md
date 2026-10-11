@@ -45,13 +45,13 @@ The output is a netCDF file with the following variables:
 - `TMPH`: Hourly air temperature (°C)
 - `WINDH`: Hourly wind speed (m s⁻¹)
 - `RAINH`: Hourly precipitation (mm m⁻² hr⁻¹)
-- `DWPTH`: Hourly atmospheric vapor pressure (kPa)
+- `DWPTH`: Hourly actual atmospheric vapor pressure (kPa), computed as `es(TA_ERA) - VPD_ERA/10` with EcoSIM's `vapsat0` saturation formula. EcoSIM reads `DWPTH` as vapor pressure (`VPK=min(DWPTH,VPS)`), never as a deficit.
 - `SRADH`: Hourly incident solar radiation (W m⁻²)
 - `PATM`: Hourly Surface atmospheric pressure (kPa)
 - `year`: Year AD
 - `Z0G`: Windspeed measurement height (m)
 - `IFLGW`: Flag for raising Z0G with vegetation
-- `ZNOONG`: Time of solar noon (hour)
+- `ZNOONG`: Mean solar noon on the forcing clock (hour), `12 - lon/15 + utc_offset`. AmeriFlux timestamps are local standard time, so `ZNOONG` must be local too; EcoSIM adds the daily equation of time and caps hourly `SRADH` by the sun angle from `ZNOONG`.
 
 ## Workflow
 
@@ -70,11 +70,28 @@ The converter must ensure derived climate values are in legitimate ranges before
 - `TMPH` from `TA_ERA`: -90 to 60 degC.
 - `WINDH` from `WS_ERA`: 0 to 75 m s^-1.
 - `RAINH` from `P_ERA`: non-negative source precipitation.
-- `DWPTH` from `VPD_ERA`: non-negative source vapor pressure deficit.
+- `DWPTH` from `VPD_ERA` and `TA_ERA`: non-negative source vapor pressure deficit; resulting vapor pressure clipped to `[0, es(TA)]`.
 - `SRADH` from `SW_IN_ERA`: 0 to 1400 W m^-2.
 - `PATM` from `PA_ERA`: kPa bounds centered on site elevation when `ALTIG` is available, otherwise broad physical fallback bounds.
 
 For sentinel values, non-finite values, and values outside these bounds, mask the value and interpolate along the half-hourly time axis. Use nearest-edge filling only at the beginning or end of the available source period. Emit a JSON quality report when `--quality-report` is supplied.
+
+## Time Registration (ERA5 vs Tower Clock)
+
+Some AmeriFlux releases ship an ERA5 file whose clock is offset from the tower record (e.g. US-Ton 5-7, US-Ne1 4-7, and US-Wkg 4-7 are 1 h late; their tower `SW_IN_F` is on local standard time). Mean bias cannot detect this, so the converter coregisters ERA5 with the tower before QC and hourly aggregation:
+
+1. Find the FULLSET file (`--in-situ`, or auto-discovery beside the ERA5 CSV) and load measured `SW_IN_F` (QC 0).
+2. Cross-correlate `SW_IN_ERA` with tower `SW_IN_F` over lags of +/-3 h in source-timestep steps; require at least 2000 paired steps.
+3. Treat a non-zero best lag as real only when it raises the correlation by at least 0.01 over zero lag and agrees with the diurnal-centroid lag within 0.5 h; otherwise report `ambiguous` and do not shift.
+4. In `--time-registration auto` (default), shift every ERA5 variable onto the tower clock, keep the original record span, and fill the shifted-out edge steps from the nearest valid value. `check` reports without shifting; `off` skips the check. `--time-shift-hours` applies a known lag (positive = ERA5 late) without a tower file.
+5. Infer `ZNOONG` after registration, so it follows the corrected (tower) clock.
+
+The quality report's `time_registration` block records `status` (`registered`, `corrected`, `misregistered` in check mode, `ambiguous`, `unverified` without a tower file, `insufficient_overlap`, `manual`, `skipped`), the lag, correlations by lag, centroid lag, and `applied_shift_hours`. After a correction, confirm that the in situ `SRADH` `diurnal_centroid_lag_hours` is near zero. A record without a tower file is `unverified`: its clock is assumed, not checked.
+
+## Solar Noon and Forcing Clock
+
+- The UTC offset of the CSV clock is not stored in AmeriFlux files. By default the converter infers it as the whole hour nearest to `(SW_IN_ERA diurnal centroid) - (12 - lon/15)`; rounding `lon/15` is wrong for sites far from their zone meridian (US-UMB at -84.7 deg is UTC-5). Pass `--utc-offset` to override.
+- The quality report's `solar_noon` block records `ZNOONG`, the offset and its source, and the centroid mismatch; a mismatch above 0.75 h is a warning.
 
 ## In Situ Comparison
 
@@ -83,7 +100,7 @@ For AmeriFlux sites, compare against observations whenever possible:
 1. Use `--in-situ <FULLSET_HH_or_HR.csv>` when the observation file is known. Otherwise, auto-discover a matching `FULLSET_HH` or `FULLSET_HR` CSV beside the ERA5 input.
 2. Prefer `TA_F`, `WS_F`, `P_F`, `VPD_F`, `SW_IN_F`, and `PA_F`, but retain only records whose corresponding `*_F_QC` value is `0` (measured). Do not validate ERA5 against records whose QC value indicates gap filling or ERA substitution.
 3. If consolidated fields are unavailable, use direct measured columns such as `TA`, `WS`, `P`, `VPD`, `SW_IN`, or `PA` when present.
-4. Average temperature, wind, VPD, shortwave radiation, and pressure to hourly values. Sum precipitation. Require every source interval within an hour to be measured.
+4. Convert measured `VPD_F` to vapor pressure with measured `TA_F` (both QC 0). Average temperature, wind, vapor pressure, shortwave radiation, and pressure to hourly values. Sum precipitation. Require every source interval within an hour to be measured.
 5. Compare the observations against values read back from the generated NetCDF, not merely against the pre-write DataFrame.
 6. Record paired hours, forcing and observed means, mean bias, MAE, RMSE, Pearson correlation, and relative bias. For precipitation, emphasize total bias over paired intervals.
 7. Require at least 720 paired measured hours before issuing difference warnings by default. Use `--comparison-min-pairs` only when a shorter validation period is scientifically justified.
@@ -110,7 +127,8 @@ python .agents/skills/ameriflux-era5-to-ecosim/era5_to_ecosim_converter.py \
   --output result/US-Ha1/US-Ha1_ecosim_climate.nc \
   --site-id US-Ha1 \
   --in-situ data/AMF_US-Ha1_FLUXNET_FULLSET_1991-2020_3-5/AMF_US-Ha1_FLUXNET_FULLSET_HH_1991-2020_3-5.csv \
-  --quality-report result/US-Ha1/US-Ha1_era5_quality_report.json
+  --quality-report result/US-Ha1/US-Ha1_era5_quality_report.json \
+  [--utc-offset -5] [--time-registration auto|check|off] [--time-shift-hours 1]
 ```
 
 Omit `--in-situ` to use automatic discovery. Use `--skip-in-situ-comparison` only when the task explicitly excludes tower validation.

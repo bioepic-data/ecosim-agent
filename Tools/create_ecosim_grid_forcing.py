@@ -19,6 +19,139 @@ import numpy as np
 from pathlib import Path
 
 SOIL_FILL_VALUE = -999.9
+SKILLS_DIR = Path(__file__).resolve().parents[1] / ".agents" / "skills"
+
+# EcoSIM estimates these when the input is negative (SoilHydroParaMod
+# ComputeSoilHydroPars for FC/WP/Ksat; readimod for CEC), so missing layers
+# are written as -1 instead of an invented value.
+MODEL_ESTIMATED_IF_NEGATIVE = ('FC', 'WP', 'SCNV', 'SCNH', 'CEC')
+# EcoSIM uses these as read (readimod readTopoNC); a fill value corrupts the run,
+# e.g. CORGR*1000 becomes a negative POC pool and FHOL rescales Ksat.
+REQUIRED_SOIL_RANGES = {
+    'CDPTH': (0.0, None),
+    'BKDSI': (0.1, 2.65),
+    'CSAND': (0.0, 1000.0),
+    'CSILT': (0.0, 1000.0),
+    'ROCK': (0.0, 1.0),
+    'PH': (0.0, 14.0),
+    'CORGC': (0.0, None),
+    'FHOL': (0.0, 1.0),
+    'AEC': (0.0, None),
+    'CORGR': (0.0, None),
+}
+ORGANIC_CORGC_THRESHOLD = 120.0  # kg C/Mg (12% OC, USDA organic soil material)
+ORGANIC_BULK_DENSITY = 0.15      # Mg m-3, forest-floor organic horizon
+# Defaults for variables gSSURGO cannot provide, following the Blodgett example grid.
+DEFAULT_FHOL = 0.15              # macropore fraction above DEFAULT_FHOL_DEPTH
+DEFAULT_FHOL_DEPTH = 0.38        # m
+DEFAULT_AEC = 1.0                # cmol kg-1
+DEFAULT_CORGR_FRACTION = 0.015   # POC as a fraction of CORGC
+
+
+def in_range(varname, value):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return False
+    if not np.isfinite(value) or value <= SOIL_FILL_VALUE + 1.0:
+        return False
+    lower, upper = REQUIRED_SOIL_RANGES.get(varname, (None, None))
+    if lower is not None and value < lower:
+        return False
+    if upper is not None and value > upper:
+        return False
+    return True
+
+
+def nearest_valid_index(valid, index):
+    """Nearest layer with a valid value; ties go to the deeper layer."""
+    candidates = [i for i, ok in enumerate(valid) if ok]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda i: (abs(i - index), -i))
+
+
+def gap_fill_soil_profile(interp, nlevs):
+    """Fill missing layer values so EcoSIM never reads the -999.9 fill value.
+
+    Returns a filled copy of the interpolated profile and a list of notes
+    describing every substitution.
+    """
+    filled = {key: list(values) for key, values in interp.items()}
+    notes = []
+    depths = filled.get('CDPTH') or []
+    nlayers = min(len(depths), nlevs)
+    if nlayers == 0 or not all(in_range('CDPTH', d) for d in depths[:nlayers]):
+        raise ValueError("Soil profile has missing layer depths (CDPTH); cannot build grid.")
+
+    corgc = [float(v) if in_range('CORGC', v) else None for v in filled.get('CORGC', [])[:nlayers]]
+    organic = [c is not None and c >= ORGANIC_CORGC_THRESHOLD for c in corgc]
+
+    for varname in ('BKDSI', 'ROCK', 'CSAND', 'CSILT', 'PH', 'CORGC'):
+        values = (filled.get(varname) or [SOIL_FILL_VALUE] * nlayers)[:nlayers]
+        values += [SOIL_FILL_VALUE] * (nlayers - len(values))
+        valid = [in_range(varname, v) for v in values]
+        for i in range(nlayers):
+            if valid[i]:
+                continue
+            if organic[i] and varname == 'BKDSI':
+                values[i] = ORGANIC_BULK_DENSITY
+                notes.append(f"{varname} layer {i + 1}: organic horizon default {ORGANIC_BULK_DENSITY}")
+            elif organic[i] and varname == 'ROCK':
+                values[i] = 0.0
+                notes.append(f"{varname} layer {i + 1}: organic horizon, set to 0")
+            else:
+                source = nearest_valid_index(valid, i)
+                if source is None:
+                    raise ValueError(f"No valid {varname} value in any soil layer; cannot gap-fill.")
+                values[i] = values[source]
+                notes.append(f"{varname} layer {i + 1}: copied from layer {source + 1}")
+        filled[varname] = values
+
+    for varname in MODEL_ESTIMATED_IF_NEGATIVE:
+        values = (filled.get(varname) or [])[:nlayers]
+        values += [SOIL_FILL_VALUE] * (nlayers - len(values))
+        for i, value in enumerate(values):
+            try:
+                ok = np.isfinite(float(value)) and float(value) >= 0.0
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                values[i] = -1.0
+                notes.append(f"{varname} layer {i + 1}: set to -1 for EcoSIM to estimate")
+        filled[varname] = values
+
+    filled['FHOL'] = [DEFAULT_FHOL if d <= DEFAULT_FHOL_DEPTH + 1.0e-6 else 0.0 for d in depths[:nlayers]]
+    filled['AEC'] = [DEFAULT_AEC] * nlayers
+    filled['CORGR'] = [DEFAULT_CORGR_FRACTION * c for c in filled['CORGC']]
+    notes.append(
+        f"FHOL={DEFAULT_FHOL} to {DEFAULT_FHOL_DEPTH} m then 0, AEC={DEFAULT_AEC}, "
+        f"CORGR={DEFAULT_CORGR_FRACTION}*CORGC (template defaults; not in gSSURGO)"
+    )
+    return filled, notes
+
+
+def validate_grid_layers(output_file):
+    """Return problems in the soil layers EcoSIM reads (1..NJ+NL2)."""
+    problems = []
+    with nc.Dataset(output_file) as ds:
+        nread = int(np.ravel(ds['NJ'][:])[0]) + int(np.ravel(ds['NL2'][:])[0])
+        for varname in REQUIRED_SOIL_RANGES:
+            if varname not in ds.variables:
+                problems.append(f"{varname}: variable missing")
+                continue
+            values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
+            bad = [i + 1 for i, v in enumerate(values) if not in_range(varname, v)]
+            if bad:
+                problems.append(f"{varname}: invalid in layers {bad}")
+        for varname in MODEL_ESTIMATED_IF_NEGATIVE:
+            if varname in ds.variables:
+                values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
+                bad = [i + 1 for i, v in enumerate(values) if not np.isfinite(v)]
+                if bad:
+                    problems.append(f"{varname}: non-finite in layers {bad}")
+    return problems
+
 
 def classify_series(values, missing_markers=None):
     markers = set([SOIL_FILL_VALUE, -1])
@@ -55,7 +188,7 @@ def load_site_data(site_id, result_dir="result"):
             return data
 
     # If file doesn't exist, try to extract it
-    script_path = ".claude/skills/ameriflux_site_info/extract_ameriflux_site_data.py"
+    script_path = str(SKILLS_DIR / "ameriflux-site-info" / "extract_ameriflux_site_data.py")
     print(f"Extracting site information for {site_id}...")
     result = subprocess.run([
         sys.executable, script_path, site_id, result_dir
@@ -95,7 +228,7 @@ def load_soil_data(lon, lat, template_path, site_id, result_dir="result"):
             return data
 
     # If file doesn't exist, try to extract it
-    script_path = ".claude/skills/ameriflux_surgo_grid_extract/extract_gssurgo_profile.py"
+    script_path = str(SKILLS_DIR / "ameriflux-surgo-grid-extract" / "extract_gssurgo_profile.py")
     gdb_path = "data/gSSURGO_CONUS.gdb"
 
     print(f"Extracting soil profile for lon={lon}, lat={lat}...")
@@ -439,7 +572,8 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
 
     # Soil profile variables from gSSURGO data
     if soil_data and 'interpolated' in soil_data:
-        interp = soil_data['interpolated']
+        interp, gap_notes = gap_fill_soil_profile(soil_data['interpolated'], nlevs)
+        report["gap_filled"] = gap_notes
 
         def fit_levels(values, fill_value):
             vals = list(values) if values is not None else []
@@ -522,7 +656,7 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
         aec = ds.createVariable('AEC', 'f4', ('ntopou', 'nlevs'), fill_value=-999.9)
         aec.long_name = "Anion exchange capacity"
         aec.units = "cmol kg soil-1"
-        aec[:] = [[SOIL_FILL_VALUE] * nlevs]
+        aec[:] = [fit_levels(interp.get('AEC'), -999.9)]
 
         corgc = ds.createVariable('CORGC', 'f4', ('ntopou', 'nlevs'), fill_value=-999.9)
         corgc.long_name = "Total soil organic carbon"
@@ -532,12 +666,12 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
         corgr = ds.createVariable('CORGR', 'f4', ('ntopou', 'nlevs'), fill_value=-999.9)
         corgr.long_name = "POC (part of SOC)"
         corgr.units = "kg C/Mg soil"
-        corgr[:] = [[SOIL_FILL_VALUE] * nlevs]
+        corgr[:] = [fit_levels(interp.get('CORGR'), -999.9)]
 
         for var_name in ['CDPTH', 'BKDSI', 'FC', 'WP', 'SCNV', 'SCNH', 'CSAND', 'CSILT', 'FHOL', 'ROCK', 'PH', 'CEC', 'CORGC']:
             if not classify_series(interp.get(var_name)):
                 report["underived_or_fill_only_variables"].append(var_name)
-        report["underived_or_fill_only_variables"].extend(['AEC', 'CORGR'])
+        report["underived_or_fill_only_variables"].extend(['AEC', 'CORGR', 'FHOL'])
 
     else:
         print("Warning: No soil data available, using template defaults")
@@ -577,12 +711,12 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
         aec = ds.createVariable('AEC', 'f4', ('ntopou', 'nlevs'), fill_value=-999.9)
         aec.long_name = "Anion exchange capacity"
         aec.units = "cmol kg soil-1"
-        aec[:] = [[SOIL_FILL_VALUE] * nlevs]
+        aec[:] = [[DEFAULT_AEC] * nlevs]
 
         corgr = ds.createVariable('CORGR', 'f4', ('ntopou', 'nlevs'), fill_value=-999.9)
         corgr.long_name = "POC (part of SOC)"
         corgr.units = "kg C/Mg soil"
-        corgr[:] = [[SOIL_FILL_VALUE] * nlevs]
+        corgr[:] = [[DEFAULT_CORGR_FRACTION * c for c in [150, 200, 140, 100, 40, 20, 10, 7, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 0]]]
 
     # Continue with remaining variables that have defaults or are not extracted
     # Nutrient pools (defaults - not extracted from gSSURGO)
@@ -836,6 +970,8 @@ def main():
 
     # Step 3: Create NetCDF file
     report = create_grid_netcdf(site_data, soil_data, template_path, output_file)
+    problems = validate_grid_layers(output_file)
+    report["layer_validation_problems"] = problems
 
     report_path = f"{result_dir}/{site_id}_grid_derivation_report.json"
     with open(report_path, 'w') as f:
@@ -856,6 +992,11 @@ def main():
     print(f"  Vegetation type: {site_data['IXTYP1']} (IGBP code)")
     print(f"  Variables not derived from source data: {report['underived_or_fill_only_variables']}")
     print(f"  Derivation report: {report_path}")
+    if problems:
+        print("ERROR: grid soil layers read by EcoSIM are invalid:", file=sys.stderr)
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

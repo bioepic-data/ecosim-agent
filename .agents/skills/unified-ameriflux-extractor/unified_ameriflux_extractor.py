@@ -219,6 +219,8 @@ def run_gssurgo_extraction(gdb_path: str, lon: float, lat: float, template_path:
     if result.returncode != 0:
         print(f"gSSURGO extraction failed: {result.stderr}", file=sys.stderr)
         return None
+    if result.stderr.strip():
+        print(result.stderr.strip(), file=sys.stderr)
     try:
         with open(out_path, "r") as f:
             return json.load(f)
@@ -388,20 +390,34 @@ def run_unified_extraction(
             climate_cmd.extend(["--output", climate_output])
         climate_cmd.extend(["--data-dir", climate_data_dir, "--result-dir", result_dir])
         result = subprocess.run(climate_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"EcoSIM climate forcing generation failed: {result.stderr}", file=sys.stderr)
+        output_path = climate_output if climate_output else os.path.join(result_dir, site_id or "", f"{site_id}_ecosim_climate.nc")
+        if result.returncode != 0 or not os.path.exists(output_path):
+            print(
+                f"EcoSIM climate forcing generation failed (exit {result.returncode}); "
+                f"{output_path} {'exists' if os.path.exists(output_path) else 'was not written'}.\n"
+                f"{result.stdout}{result.stderr}",
+                file=sys.stderr,
+            )
         else:
-            output_path = climate_output if climate_output else os.path.join(result_dir, f"{site_id}_ecosim_climate.nc")
+            if result.stderr.strip():
+                print(result.stderr.strip(), file=sys.stderr)
             print(f"EcoSIM climate forcing generated: {output_path}")
     # Generate EcoSIM grid forcing NetCDF if requested
     if grid_output:
         grid_script_path = os.path.join(os.getcwd(), "Tools", "create_ecosim_grid_forcing.py")
         grid_cmd = [sys.executable, grid_script_path, site_id or ""]
         result = subprocess.run(grid_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"EcoSIM grid forcing generation failed: {result.stderr}", file=sys.stderr)
+        default_grid_path = os.path.join(result_dir, site_id or "", f"{site_id}_ecosim_grid.nc")
+        if result.returncode != 0 or not os.path.exists(default_grid_path):
+            print(
+                f"EcoSIM grid forcing generation failed (exit {result.returncode}); "
+                f"{default_grid_path} {'exists' if os.path.exists(default_grid_path) else 'was not written'}.\n"
+                f"{result.stdout}{result.stderr}",
+                file=sys.stderr,
+            )
         else:
-            default_grid_path = os.path.join(result_dir, site_id, f"{site_id}_ecosim_grid.nc")
+            if result.stderr.strip():
+                print(result.stderr.strip(), file=sys.stderr)
             if os.path.abspath(grid_output) != os.path.abspath(default_grid_path):
                 try:
                     os.rename(default_grid_path, grid_output)
