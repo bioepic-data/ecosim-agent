@@ -128,6 +128,20 @@ Interpret `RSRR` as radial root resistivity per unit root surface area in `MPa h
 
 Treat every root-resistance equation and parameter interpretation as EcoSIM-code-version dependent. Before diagnosing or transferring `RSRR`, `RVSR`, or `ARSRA`, verify the active model revision and record its commit or version when available. Recheck radial-resistance assembly, soil-moisture modifiers, conduit-count geometry, and axial-resistance scaling in that revision; the formulas documented here describe the inspected implementation and are not guaranteed across versions.
 
+## Literature-Backed Corrections
+
+When the run-folder workflow asks for corrections (`create_site_smoke_run.py`),
+`scripts/trait_corrections.py` plans and applies them; use it rather than
+editing values by hand. Severe findings (every `ERROR`, values outside a
+web-evidence range, wrong categorical codes) are corrected; the Jmax:Vcmax
+diagnostic is not. Parameter values must be backed by literature: each numeric
+correction takes the midpoint of a sourced range in the web-evidence JSON
+(`SLA1`: 0.25 x that typical value), Rubisco kinetics are corrected through
+`VOMX` from a sourced `derived_ranges` entry `RUBISCO_SPECIFICITY`, and
+categorical codes follow `ElmIDMod.F90`. Without a sourced range a finding stays
+unresolved. Corrections go to a site PFT-parameter copy via `ParEditor`, never
+to the `.desc` file, and every correction record carries its citation.
+
 ## Parser Notes
 
 The parser treats each block header as a plant identity record:

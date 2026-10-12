@@ -26,7 +26,13 @@ For requests to create, set up, or run an EcoSIM case for a site (for example
 with the request text before preparing data, record what files cannot show
 (steps that do not apply, the executable, test and full runs, evaluation
 verdicts) with `set`, and report stage status from `result/<SITE_ID>/PROGRESS.md`
-at the end and whenever asked. The site-input scripts (climate, grid, unified
+at the end and whenever asked. After creating the run folder, always run the
+2-year smoke run and plant-trait evaluation
+(`ameriflux-namelist-generator/scripts/create_site_smoke_run.py`), correcting
+severe trait findings in the site PFT parameter copy until they are fixed, and
+report its result before any full simulation. Every corrected parameter value
+must be backed by literature (sourced ranges in the site's trait web-evidence
+JSON); leave findings without such evidence unresolved and report them. The site-input scripts (climate, grid, unified
 extractor, run-folder assembly) rescan the tracker automatically when they
 finish; rescan after anything else that changes the case.
 
