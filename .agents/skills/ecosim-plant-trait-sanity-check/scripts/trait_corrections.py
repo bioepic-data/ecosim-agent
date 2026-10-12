@@ -22,6 +22,9 @@ invented value. Rules:
   RUBISCO_SPECIFICITY range.
 - Categorical identity (IEBTYP, ISNTYP, ...): the EcoSIM enum code the checker
   expects (ElmIDMod), with the categorical web evidence as supporting source.
+- CHL for C3 trees without a literature range: the user default 0.12, recorded
+  as evidence level "user-default" (C3 Jmax scales with ETMX*CHL, so the
+  resulting protein-normalized Jmax:Vcmax is recorded too).
 """
 
 from __future__ import annotations
@@ -37,8 +40,24 @@ SLA_TYPICAL_FRACTION = 0.25
 RULE_TOLERANCE = 0.01
 SPECIFICITY_KEY = "RUBISCO_SPECIFICITY"
 RUBISCO_PARAMETER = "VCMX/VOMX/XKCO2/XKO2"
+# User rule (2026-10-12): C3 trees without a usable literature CHL get CHL = 0.12.
+C3_TREE_PFTS = ("ndlf", "ndld", "bdlf", "bdln", "bdlw", "bspr", "dfir", "jpin", "lpin", "tasp", "woak")
+C3_TREE_CHL_DEFAULT = 0.12
+IC3_PHOTO = 3  # ElmIDMod ic3_photo
 EXPECTED_CODE = re.compile(r"is expected to use .*\((\d+)\); found")
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
+
+def is_c3_tree(pft: str, values: Dict[str, float]) -> bool:
+    ictyp = values.get("ICTYP")
+    return pft[:4] in C3_TREE_PFTS and ictyp is not None and int(round(ictyp)) == IC3_PHOTO
+
+
+def jmax_to_vcmax(values: Dict[str, float], chl: float) -> Optional[float]:
+    """Protein-normalized C3 Jmax:Vcmax, ETMX*CHL/(3.5*VCMX*RUBP), as in StomatesMod.F90."""
+    if all(values.get(k) for k in ("ETMX", "VCMX", "RUBP")):
+        return values["ETMX"] * chl / (3.5 * values["VCMX"] * values["RUBP"])
+    return None
 
 
 def is_severe(finding: Dict[str, Any]) -> bool:
@@ -139,6 +158,19 @@ def plan_corrections(
             }
             continue
         entry = ranges.get(variable)
+        if entry is None and variable == "CHL" and is_c3_tree(pft, values):
+            ratio_old = jmax_to_vcmax(values, values["CHL"]) if values.get("CHL") else None
+            ratio_new = jmax_to_vcmax(values, C3_TREE_CHL_DEFAULT)
+            corrections[(pft, "CHL")] = {
+                "pft": pft, "variable": "CHL", "old": values.get("CHL"), "new": C3_TREE_CHL_DEFAULT,
+                "rule": "user default for C3 trees without a usable literature value"
+                        + (f"; Jmax:Vcmax {ratio_old:.2f} -> {ratio_new:.2f} (ETMX unchanged)"
+                           if ratio_old is not None and ratio_new is not None else ""),
+                "evidence": {"source": "user default (2026-10-12): C3 trees use CHL = 0.12 when the literature search "
+                                       "finds no usable light-harvesting fraction; not literature-backed",
+                             "evidence_level": "user-default"},
+            }
+            continue
         if entry is None:
             unresolved.append({"finding": message, "pft": pft, "variable": variable,
                                "reason": "no literature-backed range for this parameter in web evidence"})

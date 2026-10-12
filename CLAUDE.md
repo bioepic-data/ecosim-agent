@@ -32,7 +32,9 @@ at the end and whenever asked. After creating the run folder, always run the
 severe trait findings in the site PFT parameter copy until they are fixed, and
 report its result before any full simulation. Every corrected parameter value
 must be backed by literature (sourced ranges in the site's trait web-evidence
-JSON); leave findings without such evidence unresolved and report them. The site-input scripts (climate, grid, unified
+JSON); leave findings without such evidence unresolved and report them,
+except `CHL` for C3 trees, which defaults to 0.12 (recorded as a user default)
+when no usable literature value is found. The site-input scripts (climate, grid, unified
 extractor, run-folder assembly) rescan the tracker automatically when they
 finish; rescan after anything else that changes the case.
 

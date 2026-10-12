@@ -74,6 +74,30 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(unresolved, {"CHL"})
         self.assertNotIn("CHL", self.by_var)
 
+    def test_c3_tree_chl_gets_user_default(self):
+        current = {"bdlf42": {**CURRENT["bdlf42"], "CHL": 0.025, "ETMX": 405.0, "RUBP": 0.125, "ICTYP": 3}}
+        plan = tc.plan_corrections(REPORT, EVIDENCE, current)
+        chl = next(c for c in plan["corrections"] if c["variable"] == "CHL")
+        self.assertEqual(chl["new"], 0.12)
+        self.assertEqual(chl["evidence"]["evidence_level"], "user-default")
+        self.assertIn("Jmax:Vcmax 0.51 -> 2.47", chl["rule"])
+        self.assertNotIn("CHL", {u["variable"] for u in plan["unresolved"]})
+
+    def test_chl_default_only_for_c3_trees(self):
+        for pft, ictyp in (("gr3s42", 3), ("bdlf42", 4)):
+            report = {"findings": [{**REPORT["findings"][1], "pft_code": pft}]}
+            current = {pft: {"CHL": 0.025, "ICTYP": ictyp}}
+            plan = tc.plan_corrections(report, {"plants": []}, current)
+            self.assertEqual(plan["corrections"], [], pft)
+            self.assertEqual([u["variable"] for u in plan["unresolved"]], ["CHL"], pft)
+
+    def test_literature_chl_range_overrides_default(self):
+        evidence = {"plants": [{**EVIDENCE["plants"][0], "numeric_ranges": EVIDENCE["plants"][0]["numeric_ranges"]
+                                + [{"variable": "CHL", "min": 0.1, "max": 0.2, "source": "lit", "url": "u"}]}]}
+        current = {"bdlf42": {**CURRENT["bdlf42"], "CHL": 0.025, "ICTYP": 3}}
+        chl = next(c for c in tc.plan_corrections(REPORT, evidence, current)["corrections"] if c["variable"] == "CHL")
+        self.assertAlmostEqual(chl["new"], 0.15)
+
     def test_minor_diagnostic_is_not_corrected(self):
         self.assertNotIn("ETMX*CHL/VCMX*RUBP", self.by_var)
 

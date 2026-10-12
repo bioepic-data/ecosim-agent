@@ -221,6 +221,10 @@ constraints such as `RUBISCO_SPECIFICITY` (C3 Sc/o at 25 oC). Rules
   `ElmIDMod.F90`, as the checker reports it.
 - A severe finding with no literature range is left **unresolved** and reported;
   never substitute a checker screening range or an unsourced value.
+- Exception for `CHL` in C3 trees: when no usable literature value is found,
+  the correction loop sets `CHL = 0.12` as a recorded user default (evidence level
+  `user-default`; see `ecosim-plant-trait-sanity-check` `references/sanity_rules.md`)
+  in the site PFT copy and logs the resulting Jmax:Vcmax change; report it.
 
 Corrections are applied with `ParEditor` (`ecosim-pftpar-editor`) to a site copy,
 `input/<SITE_ID>_ecosim_pftpar.nc`, which both namelists then use; the shared
