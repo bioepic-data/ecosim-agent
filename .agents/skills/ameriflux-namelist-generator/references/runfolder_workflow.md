@@ -191,9 +191,22 @@ iteration re-plans without rerunning the model) or after `--max-rounds`
 web-evidence range, and every wrong categorical code; the
 model-formulation-sensitive Jmax:Vcmax diagnostic is reported, not corrected.
 
-Every corrected value must be backed by literature. Before the correcting run,
-search the literature for the site's species following
-`ecosim-plant-trait-sanity-check` and record sourced ranges (source, URL,
+Every corrected value must be backed by literature that follows the site's
+vegetation. Before the correcting run, extract the site's species composition
+and trait measurements from the AmeriFlux BADM/BIF and turn the measurements
+into site-level evidence:
+
+```bash
+S=.agents/skills/ecosim-plant-trait-sanity-check/scripts/site_vegetation.py
+python $S extract --site-id <SITE_ID> [--bif data/AMF_AA-Flx_BIF_*.xlsx]
+python $S site-evidence --site-id <SITE_ID> --pft <PFT>
+```
+
+Then search the literature for the site's dominant species (priority: site
+measurements > species > genus > functional type) following
+`ecosim-plant-trait-sanity-check`, combine per-species values by canopy share
+(`python $S weight --site-id <SITE_ID>`), check the file
+(`python $S lint --site-id <SITE_ID>`), and record sourced ranges (source, URL,
 evidence level, unit conversion) in `input/<SITE_ID>_plant_trait_web_evidence.json`:
 `numeric_ranges` for trait variables, and `derived_ranges` for multi-parameter
 constraints such as `RUBISCO_SPECIFICITY` (C3 Sc/o at 25 oC). Rules
