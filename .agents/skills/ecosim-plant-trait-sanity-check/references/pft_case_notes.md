@@ -26,3 +26,11 @@ Use these notes as evidence-aware starting points, not universal hard bounds. A 
 - Canyon live oak LMA of `187.6 g dry mass m-2` implies SLA near `0.011-0.012 m2 gC-1` for leaf carbon fractions of `0.45-0.48`. Source: https://doi.org/10.1111/nph.14406.
 - A synthesis reports California black oak SLA of `9.8 +/- 1.9 m2 kg-1 dry mass`, corresponding to roughly `0.020-0.022 m2 gC-1` at the same carbon fractions. Source: https://doi.org/10.1029/2010GB003942.
 - If species composition is unresolved, `SLA1 = 0.018 m2 gC-1` is a practical mixed-oak starting value, with `0.016-0.020 m2 gC-1` as a sensitivity range. This is an inference from the two species, not a direct SOAP measurement. Retune when species-resolved canopy or leaf-mass fractions are available.
+
+## US-UMB `bdlf42` (University of Michigan Biological Station)
+
+- Canopy (AmeriFlux BADM 2010 overstory): Populus grandidentata 39%, Quercus rubra 17%, Acer rubrum 15%, Populus tremuloides 13%, Betula papyrifera 8%, minor Fagus grandifolia, Acer saccharum, Pinus strobus. Site LMA (1998-99) gives canopy-weighted SLA 0.056-0.068 m2 gC-1; site foliage N:C 0.040-0.043.
+- The shared `bdlf42` template uses `CHL = 0.025` and `ETMX = 405` (as do most `bdlf*` records; 62 of 83 PFTs in `ecosim_pftpar_20260915.nc` have `CHL < 0.08`), giving a C3 protein-normalized Jmax:Vcmax of 0.51 with `VCMX = 45`, `RUBP = 0.125`. With those `ETMX`, `VCMX`, and `RUBP`, the diagnostic is about `20.6*CHL`, so `CHL` in 0.058-0.146 satisfies Jmax:Vcmax 1.2-3, and only 0.08-0.146 also satisfies the 0.08-0.30 `CHL` screen.
+- No sourced light-harvesting fraction or Jmax:Vcmax at 25 oC was verified by web search (2026-10-12; candidate full texts: Evans 1989, Evans & Poorter 2001, Niinemets & Tenhunen 1997 for Acer saccharum, Kattge & Knorr 2007, Wullschleger 1993), so the correction loop left `CHL` unresolved.
+- 2026-10-12: by user instruction, `CHL` was set to 0.12 for `bdlf42` in the US-UMB site copy `result/US-UMB/input/US-UMB_ecosim_pftpar.nc` only (ETMX unchanged). This raises Jmax 4.8x (Jmax:Vcmax 0.51 -> 2.47). It is a user-specified value, not literature-backed; revisit as a CHL/ETMX pair once the sources above are verified, and check modeled GPP and light response against US-UMB tower GPP (2007-2021).
+

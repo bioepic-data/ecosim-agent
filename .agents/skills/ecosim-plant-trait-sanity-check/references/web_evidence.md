@@ -22,13 +22,41 @@ Useful starting points:
 - Global Spectra-Trait Initiative: https://doi.org/10.15485/2530733
 - USDA PLANTS and NRCS Plant Guides for US species profiles: https://plants.usda.gov/
 
+## Site Vegetation First
+
+When the check serves a site run, the evidence must follow the site's actual
+vegetation, not a generic PFT description:
+
+1. Extract the site's species composition and trait measurements from the
+   AmeriFlux BADM/BIF (`scripts/site_vegetation.py extract --site-id <SITE>`;
+   the site BIF, or the network `AMF_AA-Flx_BIF_*.xlsx` filtered to the site,
+   staged under `data/` (e.g. `data/AMF_AA-Net_BIF_CCBY4_20250828.xlsx`, the 615-site superset) or passed with `--bif`). This records the dominant
+   species with canopy shares (`SPP_O_PERC`, else basal area), site LMA and
+   foliage chemistry by species, the UTC offset, and snag mass.
+2. Use evidence in this priority order and record the level on every entry:
+   `site` (measurements at the site: BADM/BIF variables or studies at that
+   site) > `species` (the site's dominant species) > `genus` > `functional-type`.
+   Search each dominant species by name before falling back.
+3. Convert site measurements automatically with `site_vegetation.py
+   site-evidence` (LMA -> `SLA1`, foliage N:C -> `CNLF`, both per species).
+4. Store per-taxon literature values in a range's `species_values` list
+   (`taxon`, `min`, `max`, `source`, `url`, `evidence_level`, `conversion_note`)
+   and combine them by canopy share with `site_vegetation.py weight`
+   (weighted over the covered canopy; kept pooled if coverage is under 50%).
+5. Label evidence that is not about the site's taxa, such as generic C3
+   Rubisco kinetics, as `functional-type`, and record the region of studies
+   from elsewhere in `conversion_note`.
+6. Run `site_vegetation.py lint` before using the evidence; it requires a
+   valid level, source, URL, and conversion note, site taxa in
+   `species_values`, and site-level evidence where site measurements exist.
+
 ## Search Pattern
 
 For each selected first-grid plant block:
 
-1. Record the EcoSIM code, `NZ`, plant name, and any known site species.
-2. Resolve the likely accepted scientific name. If the block is generic, such as `C3 grass perennial`, keep the evidence level as `functional-type`.
-3. Search targeted terms:
+1. Record the EcoSIM code, `NZ`, plant name, and the site's dominant species with canopy shares (`<SITE>_site_vegetation.json`).
+2. Resolve the accepted scientific names. If the block is generic, such as `C3 grass perennial`, and no site species list exists, keep the evidence level as `functional-type`.
+3. Search targeted terms for each dominant species first:
    - `<taxon> leaf nitrogen phosphorus concentration`
    - `<taxon> Vcmax Jmax`
    - `<taxon> rooting depth root traits`

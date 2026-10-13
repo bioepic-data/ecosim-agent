@@ -37,8 +37,9 @@ Omit `--strict-physiology` only for an exploratory review where physiological fi
 python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait_desc.py /absolute/path/to/plant_trait.1930.desc --ny 1 --nx 1
 ```
 
-4. Use web search to gather trait evidence for each first-grid plant block. Read [references/web_evidence.md](references/web_evidence.md), then search for the plant name, likely taxon, or functional type plus trait terms. For `ndlf35`, `woak35`, US-Me2, or US-xSP/SOAP work, also read [references/pft_case_notes.md](references/pft_case_notes.md).
+4. For a site run, first extract the site vegetation and site trait measurements (`scripts/site_vegetation.py extract`, then `site-evidence`), and target the searches at the site's dominant species (see [references/web_evidence.md](references/web_evidence.md), Site Vegetation First). Use web search to gather trait evidence for each first-grid plant block. Read [references/web_evidence.md](references/web_evidence.md), then search for the plant name, likely taxon, or functional type plus trait terms. For `ndlf35`, `woak35`, US-Me2, or US-xSP/SOAP work, also read [references/pft_case_notes.md](references/pft_case_notes.md).
 5. Convert the evidence into EcoSIM units and save a temporary evidence JSON file. Use species-level evidence when available; otherwise use genus, family, or functional-type evidence and mark that evidence level.
+   Combine per-species values by canopy share (`site_vegetation.py weight`) and run `site_vegetation.py lint`.
 6. Re-run the checker with the evidence file:
 
 ```bash
@@ -127,6 +128,20 @@ Interpret `RVSR` as the literal arithmetic mean lumen radius of root water condu
 Interpret `RSRR` as radial root resistivity per unit root surface area in `MPa h m-1`, not as conductivity. Convert it to the fully wetted intrinsic radial conductivity with `k_radial = 1/(3600*RSRR)` in `m s-1 MPa-1`. High `RSRR` means low radial conductivity. Review it separately from `RVSR` and `ARSRA`, which control axial transport, and remember that EcoSIM further increases radial resistance as the soil micropore water fraction declines.
 
 Treat every root-resistance equation and parameter interpretation as EcoSIM-code-version dependent. Before diagnosing or transferring `RSRR`, `RVSR`, or `ARSRA`, verify the active model revision and record its commit or version when available. Recheck radial-resistance assembly, soil-moisture modifiers, conduit-count geometry, and axial-resistance scaling in that revision; the formulas documented here describe the inspected implementation and are not guaranteed across versions.
+
+## Literature-Backed Corrections
+
+When the run-folder workflow asks for corrections (`create_site_smoke_run.py`),
+`scripts/trait_corrections.py` plans and applies them; use it rather than
+editing values by hand. Severe findings (every `ERROR`, values outside a
+web-evidence range, wrong categorical codes) are corrected; the Jmax:Vcmax
+diagnostic is not. Parameter values must be backed by literature: each numeric
+correction takes the midpoint of a sourced range in the web-evidence JSON
+(`SLA1`: 0.25 x that typical value), Rubisco kinetics are corrected through
+`VOMX` from a sourced `derived_ranges` entry `RUBISCO_SPECIFICITY`, and
+categorical codes follow `ElmIDMod.F90`. Exception: **C3 tree `CHL` default (user rule, 2026-10-12):** for C3 trees (`ICTYP` C3 with a tree `pfts_short`: `ndlf`, `ndld`, `bdlf`, `bdln`, `bdlw`, `bspr`, `dfir`, `jpin`, `lpin`, `tasp`, `woak`), when the literature search finds no usable light-harvesting fraction, set `CHL = 0.12`. This is the one sanctioned exception to literature-backed values: record it as `user default`, not as literature, in the correction log and report. Because Jmax scales with `ETMX*CHL`, check the protein-normalized Jmax:Vcmax diagnostic after applying it and report the change in Jmax (for the `bdlf42` template, 0.025 -> 0.12 raises Jmax 4.8x, Jmax:Vcmax 0.51 -> 2.47). A sourced `CHL`/`ETMX` pair replaces the default when one is found. Otherwise, without a sourced range a finding stays
+unresolved. Corrections go to a site PFT-parameter copy via `ParEditor`, never
+to the `.desc` file, and every correction record carries its citation.
 
 ## Parser Notes
 

@@ -184,7 +184,12 @@ def assemble(argv: Optional[list[str]] = None) -> int:
     moved = collect_site_artifacts(site_root, input_dir)
 
     try:
-        pft_file = copy_static(args.pft_file or default_static_file(repo_root, "ecosim_pftpar_*.nc"), input_dir, "PFT parameter file")
+        # A site PFT file holds literature-backed trait corrections (create_site_smoke_run.py); keep using it.
+        site_pft = input_dir / f"{site}_ecosim_pftpar.nc"
+        if args.pft_file is None and site_pft.exists():
+            pft_file = site_pft
+        else:
+            pft_file = copy_static(args.pft_file or default_static_file(repo_root, "ecosim_pftpar_*.nc"), input_dir, "PFT parameter file")
         ghg_file = copy_static(args.atm_ghg_file or default_static_file(repo_root, "fatm_hist_GHGs_*.nc"), input_dir, "GHG file")
         micpar_file = None if args.no_micpar else copy_static(
             args.micpar_file or default_static_file(repo_root, "MicrobePars.*.nc"), input_dir, "microbial parameter file"

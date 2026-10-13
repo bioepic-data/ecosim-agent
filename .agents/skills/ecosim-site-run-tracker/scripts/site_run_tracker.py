@@ -48,7 +48,8 @@ STAGES: List[Tuple[str, str, List[Tuple[str, str]]]] = [
     ]),
     ("model_simulation", "Model simulation", [
         ("executable", "EcoSIM executable built and identified"),
-        ("smoke_test", "Short test run (few simulated days)"),
+        ("smoke_test", "Smoke run (2 simulated years in smoke_run/)"),
+        ("plant_traits", "Plant traits (.desc from smoke run) sanity check"),
         ("full_run", "Full simulation"),
     ]),
     ("output_evaluation", "Output evaluation", [
@@ -79,6 +80,7 @@ class Site:
         self.input = self.root / "input"
         self.run_dir = self.root / "run_dir"
         self.evaluation = self.root / "evaluation"
+        self.smoke = self.root / "smoke_run"
         self.state_file = self.root / "progress.json"
         self.markdown_file = self.root / "PROGRESS.md"
 
@@ -313,7 +315,18 @@ def history_files(site: Site) -> List[Path]:
     return sorted(site.run_dir.rglob("*.ecosim.h0.*.nc")) if site.run_dir.exists() else []
 
 
+def smoke_summary(site: Site) -> Optional[Dict[str, Any]]:
+    path = site.smoke / "smoke_summary.json"
+    return json.loads(path.read_text()) if path.exists() else None
+
+
 def scan_executable(site: Site) -> Result:
+    summary = smoke_summary(site)
+    if summary and summary.get("executable"):
+        stale = summary.get("stale_sources") or []
+        status = "warning" if stale else "done"
+        detail = f"{summary['executable']} (used by smoke run)" + (f"; {len(stale)} newer Fortran source(s)" if stale else "")
+        return status, detail, [summary["executable"]]
     candidates = [p for p in site.run_dir.glob("*") if p.is_file() and p.stat().st_mode & 0o111] if site.run_dir.exists() else []
     if candidates:
         return "done", f"Executable in run_dir: {candidates[0].name}", [str(candidates[0])]
@@ -321,7 +334,45 @@ def scan_executable(site: Site) -> Result:
 
 
 def scan_smoke_test(site: Site) -> Result:
-    return "pending", "Record the test run with: set --step smoke_test --status done|failed --note <summary>", []
+    summary = smoke_summary(site)
+    if summary is None:
+        return "pending", "Run create_site_smoke_run.py (2 simulated years in smoke_run/).", []
+    detail = (
+        f"{summary['years']} yr from {summary['first_year']}: exit {summary['returncode']}, "
+        f"nstep {summary['nstep']}/{summary['expected_nstep']}, history {summary['history_scan']['status']}, "
+        f"{summary['wall_seconds']} s"
+    )
+    evidence = [str(site.smoke / "smoke_summary.json")]
+    return ("done" if summary["status"] == "passed" else "failed"), detail, evidence
+
+
+def scan_plant_traits(site: Site) -> Result:
+    summary = smoke_summary(site)
+    traits = (summary or {}).get("trait_check")
+    if not traits:
+        return "pending", "No trait check yet; it runs after the smoke run.", []
+    if "errors" not in traits:
+        return "failed", f"Trait check {traits.get('status')}: {traits.get('detail', '')}", []
+    detail = f"{traits['errors']} ERROR, {traits['warnings']} WARN"
+    evidence = [traits["report"]] if traits.get("report") else []
+    fix_status = summary.get("trait_fix_status")
+    rounds = summary.get("trait_rounds") or []
+    if fix_status:
+        applied = sum(len(r.get("applied", [])) for r in rounds)
+        unresolved = rounds[-1].get("unresolved", []) if rounds else []
+        detail += f"; corrections {fix_status} ({applied} applied over {len(rounds)} round(s))"
+        if unresolved:
+            detail += "; unresolved: " + ", ".join(f"{u['variable']} ({u['reason']})" for u in unresolved)
+        if fix_status == "fixed":
+            return "done", detail, evidence
+        return "failed", detail, evidence
+    if not traits.get("web_evidence"):
+        detail += "; deterministic only, add web evidence and rerun with --trait-only"
+    if traits["errors"]:
+        return "failed", detail, evidence
+    if traits["warnings"] or not traits.get("web_evidence"):
+        return "warning", detail, evidence
+    return "done", detail, evidence
 
 
 def scan_full_run(site: Site) -> Result:
@@ -356,6 +407,7 @@ SCANNERS: Dict[str, Callable[[Site], Result]] = {
     "chronology": scan_chronology,
     "executable": scan_executable,
     "smoke_test": scan_smoke_test,
+    "plant_traits": scan_plant_traits,
     "full_run": scan_full_run,
     "target_extraction": lambda s: scan_evaluation_step(s, ("*targets*",), "extracted targets"),
     "benchmark_comparison": lambda s: scan_evaluation_step(s, ("*comparison*", "*benchmark*"), "benchmark comparison"),
@@ -383,9 +435,21 @@ def empty_state(site_id: str, request: str = "") -> Dict[str, Any]:
 
 
 def load_state(site: Site) -> Dict[str, Any]:
-    if site.state_file.exists():
-        return json.loads(site.state_file.read_text())
-    return empty_state(site.id)
+    """Saved state, with any stages or steps added to the tracker since it was written."""
+    template = empty_state(site.id)
+    if not site.state_file.exists():
+        return template
+    state = json.loads(site.state_file.read_text())
+    for stage_name, stage in template["stages"].items():
+        saved = state["stages"].setdefault(stage_name, stage)
+        ordered = {}
+        for step_name, step in stage["steps"].items():
+            ordered[step_name] = saved["steps"].get(step_name, step)
+            ordered[step_name]["title"] = step["title"]
+        saved["steps"] = ordered
+        saved["title"] = stage["title"]
+    state["stages"] = {name: state["stages"][name] for name in template["stages"]}
+    return state
 
 
 def stage_status(steps: Dict[str, Dict[str, Any]]) -> str:
@@ -408,7 +472,8 @@ def scan(site: Site, state: Dict[str, Any]) -> Dict[str, Any]:
             except Exception as exc:  # an unreadable artifact fails its step, not the scan
                 status, detail, evidence = "failed", f"Could not check: {type(exc).__name__}: {exc}", []
             if step.get("source") == "manual":
-                step["auto_status"], step["auto_detail"] = status, detail
+                # Keep the manual status, but show what the files currently say.
+                step.update({"auto_status": status, "detail": detail, "evidence": evidence})
                 continue
             if (status, detail) != (step["status"], step["detail"]):
                 step["updated"] = now()
