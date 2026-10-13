@@ -53,11 +53,12 @@ The following template variables can be derived from standard gSSURGO tables:
   BKDSI                           chorizon.dbovendry_r         Bulk density
                                                                (g/cm3)
 
-  FC                              (wthirdbar_r / 100) *        Field capacity
-                                  dbthirdbar_r                 (volumetric)
+  FC                              (wthirdbar_r / 100) /        Field capacity,
+                                  (1 - ROCK)                   volumetric per
+                                                               fine-earth volume
 
-  WP                              (wfifteenbar_r / 100) *      Wilting point
-                                  dbfifteenbar_r
+  WP                              (wfifteenbar_r / 100) /      Wilting point,
+                                  (1 - ROCK)                   same basis
 
   SCNV, SCNH                      ksat_r * 3.6                 Convert um/s
                                                                to mm/h
@@ -149,6 +150,19 @@ The atmospheric gas scalar variables `OXYEG`/`OXYGE`, `Z2GEG`, `CO2EIG`,
 `CH4EG`, `Z2OEG`, and `ZNH3EG` are not part of this soil-grid derivation
 contract. If they are absent from a generated grid NetCDF, do not flag the file
 as incomplete for this skill.
+
+## Water Retention Basis
+
+gSSURGO `wthirdbar_r` and `wfifteenbar_r` are **volumetric percentages of the
+whole soil** (gSSURGO `mdstattabcols`), not gravimetric, so they are never
+multiplied by bulk density. Across 279,000 CONUS horizons, `(wthirdbar_r -
+wfifteenbar_r)/100` correlates with `awc_r` at r = 0.83, against r = 0.14 after
+multiplying by `dbthirdbar_r`. EcoSIM keeps soil water in the micropore matrix,
+whose volume excludes rock (`FracSoiAsMicP = (1-ROCK)(1-FHOL)`, `readimod.F90`,
+`Hour1Mod.F90`), and compares FC with fine-earth porosity `1 - BKDSI/2.65`
+(`SoilHydroParaMod.F90`), so whole-soil values are divided by `1 - ROCK`. About
+0.08% of gSSURGO horizons report 1/3-bar water at or below 15-bar water; the
+grid tool sets FC and WP to -1 for such layers so EcoSIM estimates them.
 
 ## Vertical Interpolation
 

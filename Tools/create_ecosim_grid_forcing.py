@@ -127,6 +127,14 @@ def gap_fill_soil_profile(interp, nlevs):
                 notes.append(f"{varname} layer {i + 1}: set to -1 for EcoSIM to estimate")
         filled[varname] = values
 
+    # EcoSIM builds the retention curve from log(FC) - log(WP) (SoilHydroParaMod), so a
+    # layer whose source data put FC at or below WP is left for the model to estimate.
+    for i in range(nlayers):
+        fc, wp = filled['FC'][i], filled['WP'][i]
+        if fc >= 0.0 and wp >= 0.0 and fc <= wp:
+            filled['FC'][i] = filled['WP'][i] = -1.0
+            notes.append(f"FC/WP layer {i + 1}: source FC {fc:.3f} <= WP {wp:.3f}; set to -1 for EcoSIM to estimate")
+
     filled['FHOL'] = [DEFAULT_FHOL if d <= DEFAULT_FHOL_DEPTH + 1.0e-6 else 0.0 for d in depths[:nlayers]]
     filled['AEC'] = [DEFAULT_AEC] * nlayers
     filled['CORGR'] = [DEFAULT_CORGR_FRACTION * c for c in filled['CORGC']]
@@ -150,6 +158,12 @@ def validate_grid_layers(output_file):
             bad = [i + 1 for i, v in enumerate(values) if not in_range(varname, v)]
             if bad:
                 problems.append(f"{varname}: invalid in layers {bad}")
+        if 'FC' in ds.variables and 'WP' in ds.variables:
+            fc = np.ma.filled(ds['FC'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
+            wp = np.ma.filled(ds['WP'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
+            bad = [i + 1 for i in range(nread) if fc[i] >= 0 and wp[i] >= 0 and fc[i] <= wp[i]]
+            if bad:
+                problems.append(f"FC <= WP in layers {bad}")
         for varname in MODEL_ESTIMATED_IF_NEGATIVE:
             if varname in ds.variables:
                 values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
