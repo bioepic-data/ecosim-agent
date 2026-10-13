@@ -34,7 +34,10 @@ report its result before any full simulation. Every corrected parameter value
 must be backed by literature (sourced ranges in the site's trait web-evidence
 JSON); leave findings without such evidence unresolved and report them,
 except `CHL` for C3 trees, which defaults to 0.12 (recorded as a user default)
-when no usable literature value is found. The site-input scripts (climate, grid, unified
+when no usable literature value is found. Run full simulations with
+`ameriflux-namelist-generator/scripts/run_site_full.py`; if a run fails partway,
+continue it once by setting `continue_run=.true.` in the run namelist, and if
+that also fails, report the error. The site-input scripts (climate, grid, unified
 extractor, run-folder assembly) rescan the tracker automatically when they
 finish; rescan after anything else that changes the case.
 

@@ -238,6 +238,29 @@ does not reflect them and must be rerun.
 
 Report the remaining trait findings and corrections before starting the full run.
 
+## Full Simulation
+
+Only when the user asks, run the full simulation with:
+
+```bash
+nohup python .agents/skills/ameriflux-namelist-generator/scripts/run_site_full.py --site-id <SITE_ID> > /dev/null 2>&1 &
+```
+
+The run passes when EcoSIM exits 0, the last restart reports every hourly step
+of the planned years, and history has no NaN/Inf. **If it fails partway, try a
+continued run first:** the script sets `continue_run=.true.` in
+`run_dir/<SITE_ID>.namelist` and runs it again. EcoSIM reads the restart named
+in `run_dir/rpointer.esim`, walks `forc_periods` from the original start
+skipping years before the restart date (`drivers/ecosim/ecosim.F90`), and
+stops at the end of the plan, so `stop_n` stays unchanged. Because the elapsed
+step count is not restored, the continued run is accepted when it exits 0,
+reports either the total or the post-restart step count, and writes the
+restart for the planned end date. **If the continued run also fails, or there
+is no yearly restart to continue from, report the error** (both log tails and
+the summary) instead of retrying further. Logs are `run_dir/<SITE_ID>.run.log`
+and `<SITE_ID>.continue.log`; the outcome is `run_dir/full_run_summary.json`,
+which the progress tracker reads. A fresh run resets `continue_run` to `.false.`.
+
 ## Validation Checklist
 
 Before declaring the folder workable:
