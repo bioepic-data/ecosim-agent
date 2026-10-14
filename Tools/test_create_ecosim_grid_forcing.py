@@ -59,6 +59,14 @@ class GapFillTests(unittest.TestCase):
             for value in filled[varname]:
                 self.assertTrue(grid.in_range(varname, value), (varname, value))
 
+    def test_inverted_fc_wp_left_to_model(self):
+        data = profile()
+        data["WP"][4] = 0.20  # above FC 0.15
+        filled, notes = grid.gap_fill_soil_profile(data, 20)
+        self.assertEqual((filled["FC"][4], filled["WP"][4]), (-1.0, -1.0))
+        self.assertTrue(any("FC/WP layer 5" in n for n in notes))
+        self.assertEqual(filled["FC"][3], 0.16)
+
     def test_missing_depths_raise(self):
         data = profile()
         data["CDPTH"][2] = FILL

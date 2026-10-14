@@ -288,6 +288,21 @@ def choose_component(gdb_path: str, mukey: str) -> pd.Series:
     return comp.iloc[0]
 
 
+def fine_earth_water_content(whole_soil_percent: float, rock_fraction: float) -> float:
+    """Volumetric water per unit fine-earth (rock-free) soil volume, as EcoSIM uses.
+
+    gSSURGO wthirdbar_r and wfifteenbar_r are volumetric percentages of the whole soil
+    (mdstattabcols), so they are not multiplied by bulk density. EcoSIM holds soil
+    water in the micropore matrix, whose volume excludes rock (FracSoiAsMicP =
+    (1-ROCK)(1-FHOL)), and compares FC with fine-earth porosity 1-BKDSI/2.65, so
+    whole-soil contents are divided by the fine-earth volume fraction 1-ROCK.
+    """
+    if not np.isfinite(whole_soil_percent):
+        return np.nan
+    fine_earth = 1.0 - rock_fraction if np.isfinite(rock_fraction) and 0.0 <= rock_fraction < 0.95 else 1.0
+    return (whole_soil_percent / 100.0) / fine_earth
+
+
 def load_horizons(gdb_path: str, cokey: str) -> pd.DataFrame:
     pyogrio = import_pyogrio()
     hz_requested = [
@@ -378,20 +393,12 @@ def convert_horizons(hz: pd.DataFrame) -> List[Horizon]:
         sand = safe_float(r.get("sandtotal_r"))
         silt = safe_float(r.get("silttotal_r"))
 
-        fc = np.nan
-        wp = np.nan
-        if np.isfinite(w33):
-            bd_for_fc = db33 if np.isfinite(db33) else dbod
-            if np.isfinite(bd_for_fc):
-                fc = (w33 / 100.0) * bd_for_fc
-        if np.isfinite(w15):
-            bd_for_wp = db15 if np.isfinite(db15) else dbod
-            if np.isfinite(bd_for_wp):
-                wp = (w15 / 100.0) * bd_for_wp
-
         rock = safe_float(r.get("fragvol_r"))
         if np.isfinite(rock):
             rock /= 100.0
+
+        fc = fine_earth_water_content(w33, rock)
+        wp = fine_earth_water_content(w15, rock)
 
         corgc = np.nan
         if np.isfinite(om):
@@ -908,8 +915,8 @@ def build_gssurgo_output(args: argparse.Namespace, target_depths: np.ndarray) ->
         "notes": {
             "primary_soil_source": "gSSURGO",
             "BKDSI_source": "dbovendry_r",
-            "FC_formula": "(wthirdbar_r / 100) * dbthirdbar_r",
-            "WP_formula": "(wfifteenbar_r / 100) * dbfifteenbar_r",
+            "FC_formula": "(wthirdbar_r / 100) / (1 - ROCK); whole-soil volumetric -> fine-earth volumetric",
+            "WP_formula": "(wfifteenbar_r / 100) / (1 - ROCK); whole-soil volumetric -> fine-earth volumetric",
             "SCN_formula": "ksat_r [um/s] * 3.6 => mm/h",
             "CSAND_CSILT_formula": "percent * 10 => kg/Mg",
             "ROCK_source": "sum(chfrags.fragvol_r) / 100",

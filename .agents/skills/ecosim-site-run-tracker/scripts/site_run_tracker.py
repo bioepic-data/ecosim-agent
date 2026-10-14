@@ -376,6 +376,17 @@ def scan_plant_traits(site: Site) -> Result:
 
 
 def scan_full_run(site: Site) -> Result:
+    summary_path = site.run_dir / "full_run_summary.json"
+    if summary_path.exists():  # written by run_site_full.py
+        summary = json.loads(summary_path.read_text())
+        attempts = summary.get("attempts", [])
+        kinds = " + ".join(a["kind"] for a in attempts)
+        last = attempts[-1] if attempts else {}
+        detail = (f"{summary['start_year']}+{summary['stop_n']} {summary['stop_option']}: {kinds}; "
+                  f"exit {last.get('returncode')}, nstep {last.get('nstep')}")
+        if summary.get("status") == "passed":
+            return "done", detail, [str(summary_path)]
+        return "failed", f"{detail}; {summary.get('error', '')}", [str(summary_path)]
     files = history_files(site)
     if not files:
         return "pending", "No *.ecosim.h0.*.nc history output in run_dir/.", []

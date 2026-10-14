@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ecosim-agent Workflow</title>
+  <style>
+    :root {
+      --ink: #20302b; --head: #164c3a; --link: #12644f; --muted: #607068;
+      --bg: #fafbf8; --panel: #eaf1eb; --line: #c9d8cd; --warn: #8a5a00; --warn-bg: #fbf1dc;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --ink: #dbe6df; --head: #8fd3b4; --link: #7cc9a9; --muted: #9aaba2;
+        --bg: #141b18; --panel: #1f2a25; --line: #33443c; --warn: #f0c36b; --warn-bg: #2e2716;
+      }
+    }
+    :root[data-theme="dark"] {
+      --ink: #dbe6df; --head: #8fd3b4; --link: #7cc9a9; --muted: #9aaba2;
+      --bg: #141b18; --panel: #1f2a25; --line: #33443c; --warn: #f0c36b; --warn-bg: #2e2716;
+    }
+    * { box-sizing: border-box; }
+    body { max-width: 960px; margin: 48px auto; padding: 0 16px; font: 17px/1.65 system-ui, sans-serif; color: var(--ink); background: var(--bg); }
+    h1, h2, h3 { line-height: 1.25; color: var(--head); }
+    h2 { margin-top: 2.2em; border-bottom: 1px solid var(--line); padding-bottom: .2em; }
+    h3 { margin-top: 1.6em; }
+    a { color: var(--link); }
+    code { overflow-wrap: anywhere; font-size: .9em; }
+    .note, pre { padding: 14px 18px; background: var(--panel); border-radius: 8px; overflow-wrap: anywhere; }
+    pre { white-space: pre-wrap; font-size: .85em; }
+    .warn { padding: 14px 18px; background: var(--warn-bg); border-left: 4px solid var(--warn); border-radius: 6px; }
+    .meta { color: var(--muted); font-size: .9em; }
+    table { border-collapse: collapse; width: 100%; font-size: .92em; margin: 1em 0; display: block; overflow-x: auto; }
+    th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+    th { background: var(--panel); }
+    .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 1.2em 0 .4em; }
+    .stage { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: .9em; }
+    .stage b { display: block; color: var(--head); margin-bottom: .3em; }
+    .tracker { background: var(--panel); border: 1px dashed var(--line); border-radius: 10px; padding: 8px 14px; font-size: .9em; text-align: center; }
+    ol.steps > li { margin-bottom: .6em; }
+    @media (max-width: 720px) { .flow { grid-template-columns: 1fr; } body { margin: 24px auto; } }
+    @media print { body { margin: 0; max-width: none; background: white; color: black; } }
+  </style>
+</head>
+<body>
+  <h1>ecosim-agent Workflow</h1>
+  <p class="meta">Agent knowledge note · 14 October 2026 · Describes the <code>ecosim-agent</code> skills on branch <code>feature/multisite-project</code> (main plus full-run continuation, the gSSURGO FC/WP fix, and multi-site projects). Links are relative to this repository.</p>
+
+  <p><strong><code>ecosim-agent</code> turns a request such as “create an ecosim run folder for site US-UMB” into a checked, runnable EcoSIM case.</strong> It prepares site inputs from AmeriFlux, ERA5, gSSURGO, NADP/tDEP, and BADM data; builds a self-contained run folder; runs a 2-year smoke run; corrects implausible plant traits from literature; and records every stage in a progress tracker. The EcoSIM model itself is Fortran in the parent repository; these skills are the Python preprocessing and checking layer.</p>
+
+  <h2>The four stages</h2>
+  <div class="flow" role="list">
+    <div class="stage" role="listitem"><b>1 · Data preparation</b>Site metadata, climate forcing, precipitation chemistry, soil grid, vegetation and plant management.</div>
+    <div class="stage" role="listitem"><b>2 · Namelist creation</b>Run folder <code>result/&lt;SITE&gt;/{input,run_dir}</code>, namelist, chronology.</div>
+    <div class="stage" role="listitem"><b>3 · Model simulation</b>Build, 2-year smoke run, plant-trait check and correction, full run.</div>
+    <div class="stage" role="listitem"><b>4 · Output evaluation</b>Target extraction and comparison with tower and site observations.</div>
+  </div>
+  <div class="tracker">Progress tracker (<code>ecosim-site-run-tracker</code>): <code>result/&lt;SITE&gt;/progress.json</code> and <code>PROGRESS.md</code>, refreshed by every site-input script</div>
+  <p>Stages 1–3 up to the smoke run are what “create a run folder” means. The full simulation and output evaluation run only when the user asks.</p>
+
+  <h2>Result layout</h2>
+  <pre><code>ecosim-agent/result/&lt;SITE_ID&gt;/
+  input/       site NetCDF (grid, climate_&lt;first&gt;-&lt;last&gt;, pft_mgmt), Excel/JSON sidecars,
+               reports, site vegetation, trait evidence and correction logs, and copies of
+               the PFT parameter (site-corrected copy), GHG, and microbial parameter files
+  run_dir/     &lt;SITE_ID&gt;.namelist (all paths ../input/...) and, after running, model output
+  smoke_run/   2-year smoke run, its plant_trait.desc, trait-check report, smoke_summary.json
+  evaluation/  output-evaluation products (optional)
+  progress.json, PROGRESS.md</code></pre>
+
+  <h2>Stage 1 · Data preparation</h2>
+  <ol class="steps">
+    <li><strong>Start.</strong> Show the startup notice, inventory local data (<a href="../.agents/skills/ecosim-data-readiness/SKILL.md"><code>ecosim-data-readiness</code></a>), and initialize the tracker with the request text. Source data are staged under <code>data/</code> (a link to the shared data folder): AmeriFlux FULLSET/ERA5 archives, <code>gSSURGO_CONUS.gdb</code>, FAO HWSD2, NADP grids, tDEP rasters, and the network BADM file <code>AMF_AA-Net_BIF_*.xlsx</code>.</li>
+    <li><strong>Site metadata</strong> (<a href="../.agents/skills/ameriflux-site-info/SKILL.md"><code>ameriflux-site-info</code></a>): latitude, longitude, elevation, mean annual temperature, Köppen class, IGBP type. Every extraction is cross-checked: parsed signs against the raw page, coordinates against the site-ID country, Description region words, Köppen versus temperature, and Köppen from coordinates on a gridded map (<code>--koppen-raster</code>). Sign or country failures stop the extraction.</li>
+    <li><strong>Climate forcing</strong> (<a href="../.agents/skills/ameriflux-era5-to-ecosim/SKILL.md"><code>ameriflux-era5-to-ecosim</code></a> via <code>Tools/create_ecosim_climate_forcing.py</code>): ERA5 half-hourly to hourly NetCDF with
+      <ul>
+        <li>ERA5–tower <em>time registration</em>: cross-correlating shortwave with tower <code>SW_IN_F</code> and shifting late ERA5 files onto the tower clock (several AmeriFlux releases are one hour late);</li>
+        <li><code>ZNOONG</code> as local solar noon on the forcing clock (EcoSIM caps hourly radiation with the sun angle from it);</li>
+        <li><code>DWPTH</code> as actual vapor pressure, e<sub>s</sub>(T) − VPD, which is what EcoSIM reads;</li>
+        <li>NADP precipitation chemistry, gap-filled across years;</li>
+        <li>a file named by its years, <code>&lt;SITE&gt;_ecosim_climate_&lt;first&gt;-&lt;last&gt;.nc</code>, and a comparison with measured tower meteorology.</li>
+      </ul></li>
+    <li><strong>Soil grid</strong> (<a href="../.agents/skills/ameriflux-surgo-grid-extract/SKILL.md"><code>ameriflux-surgo-grid-extract</code></a> via <code>Tools/create_ecosim_grid_forcing.py</code>): dominant gSSURGO component interpolated to EcoSIM layers. Field capacity and wilting point are gSSURGO whole-soil volumetric contents divided by (1 − rock) to match EcoSIM’s rock-free matrix. Missing values are gap-filled (organic-horizon defaults, nearest layer, or −1 so EcoSIM estimates FC, WP, Ksat, CEC); layers with FC ≤ WP are left to the model; the file is rejected if any layer EcoSIM reads is invalid.</li>
+    <li><strong>Vegetation</strong>: dominant species and canopy shares from BADM (<code>site_vegetation.py extract</code>), or published site descriptions when BADM lacks them; the PFT code (<a href="../.agents/skills/ecosim-vegetation-code/SKILL.md"><code>ecosim-vegetation-code</code></a>) must exist for the grid’s Köppen suffix, because EcoSIM replaces the suffix.</li>
+    <li><strong>Plant management</strong> (<a href="../.agents/skills/ecosim-natural-plant-mgmt/SKILL.md"><code>ecosim-natural-plant-mgmt</code></a>): planting density from literature stem counts, depth, and 12 monthly thinning events for trees without biomass export. Soil management (<code>ecosim-soil-mgmt</code>) only for managed sites; otherwise the tracker step is marked skipped with the reason.</li>
+  </ol>
+  <p>The combined path is <a href="../.agents/skills/unified-ameriflux-extractor/SKILL.md"><code>unified-ameriflux-extractor</code></a>, which runs chemistry, soil, climate, and grid in one call and reports any step that fails.</p>
+
+  <h2>Stage 2 · Namelist creation</h2>
+  <pre><code>python .agents/skills/ameriflux-namelist-generator/scripts/create_site_run_folder.py --site-id &lt;SITE&gt;</code></pre>
+  <p>Moves site artifacts into <code>input/</code>, copies the shared parameter files (or keeps the site-corrected PFT copy), writes <code>run_dir/&lt;SITE&gt;.namelist</code>, and verifies that every path resolves to <code>../input/</code>. Default chronology repeats the first four forcing years 18 times for spinup, starts that many years before the forcing record, and sets <code>stop_n</code> to EcoSIM’s own run length, Σ (end − start + 1) × cycles over <code>forc_periods</code> (US-UMB: start 1909, <code>stop_n</code> 113).</p>
+
+  <h2>Stage 3 · Model simulation</h2>
+  <h3>Build</h3>
+  <p>Build in the VSCode integrated-terminal environment (shell, <code>PATH</code>, <code>CC/CXX/FC</code> from VSCode settings), reusing a build directory whose compilers match, with <code>bash build_EcoSIM.sh</code>. Report the toolchain.</p>
+
+  <h3>Smoke run and plant-trait correction</h3>
+  <pre><code>python .agents/skills/ameriflux-namelist-generator/scripts/create_site_smoke_run.py --site-id &lt;SITE&gt;</code></pre>
+  <ol class="steps">
+    <li>Run 2 simulated years in <code>smoke_run/</code>; pass only with exit 0, every hourly step (leap days counted), and history without NaN/Inf.</li>
+    <li>Check the <code>plant_trait.desc</code> the run writes with <a href="../.agents/skills/ecosim-plant-trait-sanity-check/SKILL.md"><code>ecosim-plant-trait-sanity-check</code></a> in strict physiology mode. The <code>.desc</code> file is read-only.</li>
+    <li>Build trait evidence following the site’s vegetation: site measurements (BADM LMA → <code>SLA1</code>, foliage N:C → <code>CNLF</code>) &gt; dominant species &gt; genus &gt; functional type, weighted by canopy share, linted for level, taxa, and citation (<code>site_vegetation.py site-evidence | weight | lint</code>).</li>
+    <li>Correct severe findings in a site copy, <code>input/&lt;SITE&gt;_ecosim_pftpar.nc</code>, with <code>ParEditor</code> (<a href="../.agents/skills/ecosim-pftpar-editor/SKILL.md"><code>ecosim-pftpar-editor</code></a>) and repeat the smoke run until fixed, two consecutive iterations change nothing, or four rounds pass.</li>
+  </ol>
+  <table>
+    <tr><th>Finding</th><th>Correction rule</th></tr>
+    <tr><td>Numeric value outside a literature range</td><td>Midpoint of the sourced range</td></tr>
+    <tr><td><code>SLA1</code></td><td>0.25 × the typical (midpoint) value; resolved once equal to that target</td></tr>
+    <tr><td>Rubisco kinetics (<code>VCMX/VOMX/XKCO2/XKO2</code>)</td><td>Keep <code>VCMX</code>, <code>XKCO2</code>, <code>XKO2</code>; set <code>VOMX</code> to the literature specificity midpoint</td></tr>
+    <tr><td>Categorical identity (<code>IEBTYP</code>, <code>ISNTYP</code>)</td><td>EcoSIM enum code from <code>ElmIDMod.F90</code></td></tr>
+    <tr><td><code>CHL</code> for C3 trees, no literature value</td><td>User default 0.12, recorded as <code>user-default</code>, with the resulting Jmax:Vcmax</td></tr>
+    <tr><td>Anything without literature evidence</td><td>Left unresolved and reported; never an invented value</td></tr>
+  </table>
+  <p class="note"><strong>CHL and ETMX act as a pair.</strong> In the C3 path, Jmax = <code>ETMX × CHL × leaf protein C / 3.5</code> (<code>StomatesMod.F90</code>), so only their product matters to photosynthesis. Changing <code>CHL</code> alone rescales Jmax by the same factor.</p>
+
+  <h3>Full run</h3>
+  <pre><code>nohup python .agents/skills/ameriflux-namelist-generator/scripts/run_site_full.py --site-id &lt;SITE&gt; &gt; /dev/null 2&gt;&amp;1 &amp;</code></pre>
+  <p>Only on request. The run passes with exit 0, every planned hourly step, and history without NaN/Inf. <strong>If it fails partway, the script continues it once</strong> by setting <code>continue_run=.true.</code> in the run namelist: EcoSIM reads the restart in <code>rpointer.esim</code>, skips forcing years before the restart date, and ends at the end of the plan, so <code>stop_n</code> is unchanged. <strong>If the continued run also fails, the error is reported</strong> with both log tails in <code>run_dir/full_run_summary.json</code>, which the tracker reads. Any change to inputs or traits after a full run makes that run stale.</p>
+
+  <h2>Stage 4 · Output evaluation</h2>
+  <p>Extract targets from h0 history with <a href="../.agents/skills/ecosim-h0-target-extractor/SKILL.md"><code>ecosim-h0-target-extractor</code></a> into <code>evaluation/</code>, compare with tower fluxes and site observations, and condition judgments on stand age: a cohort grown from seed in the simulation is not the mature stand at the tower.</p>
+
+  <h2>Multi-site projects</h2>
+  <p>For a set of sites, each site goes through stages 1–3 in its own <code>result/&lt;SITE&gt;/</code>; <a href="../.agents/skills/ecosim-multisite-project/SKILL.md"><code>ecosim-multisite-project</code></a> then sorts the finished cases into one project:</p>
+  <pre><code>python .agents/skills/ecosim-multisite-project/scripts/assemble_project.py --project &lt;PROJECT&gt; --sites US-UMB US-xGR
+
+result/projects/&lt;PROJECT&gt;/
+  input/&lt;SITE&gt;/      the site's inputs
+  run_dir/&lt;SITE&gt;/    &lt;SITE&gt;.namelist with paths ../../input/&lt;SITE&gt;/...
+  project.json, PROJECT.md   per-site chronology, stage, smoke, and trait status</code></pre>
+  <p>Sites without a passed smoke run are reported and left out; reassembly refreshes sites without touching others or existing model output. Full runs use <code>run_site_full.py --run-dir result/projects/&lt;PROJECT&gt;/run_dir/&lt;SITE&gt;</code>.</p>
+
+  <h2>Guardrails</h2>
+  <ul>
+    <li>Plant-trait <code>.desc</code> files are never edited; trait changes go to the PFT parameter NetCDF through <code>ParEditor</code>, in a site copy, with a backup and change log.</li>
+    <li>Every corrected parameter value cites literature (source, URL, evidence level, conversion); the only exception is the C3 tree <code>CHL</code> default.</li>
+    <li>Enum codes come from <code>f90src/Modelconfig/ElmIDMod.F90</code>, not NetCDF flag text (the PFT file’s <code>IEBTYP</code> flags are off by one).</li>
+    <li>Scripts fail loudly: missing outputs, invalid soil layers, unresolved paths, or smoke-run failures stop the step and are recorded in the tracker.</li>
+    <li>Commits are local unless the user says “commit to remote”; the <code>data</code> link and <code>result/</code> stay untracked.</li>
+  </ul>
+
+  <h2>Worked examples</h2>
+  <table>
+    <tr><th></th><th>US-UMB (UMBS, Michigan)</th><th>US-xGR (NEON GRSM, Tennessee)</th></tr>
+    <tr><td>Site</td><td>45.56 N, 234 m, Dfb, DBF</td><td>35.69 N, 579 m, Cfa, DBF</td></tr>
+    <tr><td>Climate</td><td>ERA5 1981–2021, already on tower clock</td><td>ERA5 1981–2024, shifted −1 h to tower clock</td></tr>
+    <tr><td>Soil</td><td>Rubicon sand with organic O horizon</td><td>Spivey stony cove soil; inverted FC/WP left to EcoSIM</td></tr>
+    <tr><td>Vegetation</td><td>BADM canopy shares (bigtooth aspen 39 %, red oak 17 %, red maple 15 %, …); site LMA and N:C</td><td>NEON descriptions (yellow-poplar dominant); no BADM traits</td></tr>
+    <tr><td>PFT</td><td><code>bdlf42</code>, 0.06 m<sup>−2</sup></td><td><code>bdlf31</code>, 0.083 m<sup>−2</sup></td></tr>
+    <tr><td>Trait corrections</td><td>IEBTYP, ISNTYP, VOMX, SLA1 (site LMA), RVSR, CNLF, CPLF; CHL 0.12</td><td>IEBTYP, ISNTYP, VOMX, SLA1, RVSR; CHL 0.12 (user default)</td></tr>
+    <tr><td>Chronology</td><td>1909 start, <code>stop_n</code> 113</td><td>1909 start, <code>stop_n</code> 116</td></tr>
+  </table>
+
+  <h2>Known limitations</h2>
+  <div class="warn">
+    <ul>
+      <li>FAO HWSD2 fallback cannot read <code>HWSD2.mdb</code> without an MDB driver; export <code>HWSD2_LAYERS.csv</code> to enable it.</li>
+      <li>Leaf N and P, light-harvesting fractions, and root vessel sizes are often found only at genus level or from stems; reports label the evidence level.</li>
+      <li><code>SLA1</code> under the 0.25 rule stays below literature ranges by design and is always reported as a warning.</li>
+      <li>The network BADM file is a dated snapshot (2025-08-28); a site’s own newer BIF takes precedence.</li>
+      <li>Output evaluation against tower fluxes is not yet automated.</li>
+    </ul>
+  </div>
+
+  <h2>Skill map</h2>
+  <table>
+    <tr><th>Need</th><th>Skill or script</th></tr>
+    <tr><td>Progress tracking</td><td><a href="../.agents/skills/ecosim-site-run-tracker/SKILL.md"><code>ecosim-site-run-tracker</code></a></td></tr>
+    <tr><td>Site metadata and location checks</td><td><code>ameriflux-site-info</code></td></tr>
+    <tr><td>Climate forcing, time registration</td><td><code>ameriflux-era5-to-ecosim</code>, <code>Tools/create_ecosim_climate_forcing.py</code>; non-AmeriFlux sites: <code>era5-cds-point-download</code>, <code>nldas-gesdisc-point-download</code></td></tr>
+    <tr><td>Precipitation chemistry</td><td><code>ameriflux-atmchem-info</code></td></tr>
+    <tr><td>Soil grid</td><td><code>ameriflux-surgo-grid-extract</code>, <code>Tools/create_ecosim_grid_forcing.py</code></td></tr>
+    <tr><td>PFT code, management</td><td><code>ecosim-vegetation-code</code>, <code>ecosim-natural-plant-mgmt</code>, <code>ecosim-soil-mgmt</code>, <code>ameriflux-bif-ecosim-mgmt</code></td></tr>
+    <tr><td>Run folder, namelist, smoke run</td><td><a href="../.agents/skills/ameriflux-namelist-generator/references/runfolder_workflow.md"><code>ameriflux-namelist-generator</code> run-folder workflow</a></td></tr>
+    <tr><td>Trait check, evidence, corrections</td><td><code>ecosim-plant-trait-sanity-check</code> (<code>check_plant_trait_desc.py</code>, <code>site_vegetation.py</code>, <code>trait_corrections.py</code>), <code>ecosim-pftpar-editor</code></td></tr>
+    <tr><td>Output targets</td><td><code>ecosim-h0-target-extractor</code></td></tr>
+  </table>
+</body>
+</html>
