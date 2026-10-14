@@ -104,6 +104,14 @@ Do not create `output/` or other files in `run_dir/`; EcoSIM writes its output
 there when run. Link or copy an executable into `run_dir/` only when the user
 asks or gives its path; otherwise report the executable assumption.
 
+## Multiple Sites
+
+When the request covers several sites, prepare each site with this workflow in
+its own `result/<SITE_ID>/` (with its own tracker, smoke run, and trait
+check), then sort them into one project with the `ecosim-multisite-project`
+skill: `result/projects/<PROJECT>/input/<SITE_ID>/` and
+`result/projects/<PROJECT>/run_dir/<SITE_ID>/`, plus a `PROJECT.md` manifest.
+
 ## Run Folder Creation
 
 After the site inputs exist, assemble the folder and write the namelist with

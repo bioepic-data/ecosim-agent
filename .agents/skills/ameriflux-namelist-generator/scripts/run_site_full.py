@@ -133,11 +133,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--result-dir", type=Path, default=PROJECT_ROOT / "result")
     parser.add_argument("--exe", type=Path, help=f"EcoSIM executable; default ${smoke.EXE_ENV} or newest build")
     parser.add_argument("--no-continue", action="store_true", help="Report a failure without trying a continued run")
+    parser.add_argument("--run-dir", type=Path,
+                        help="Run directory holding <SITE_ID>.namelist (e.g. a multi-site project's run_dir/<SITE_ID>); "
+                             "default result/<SITE_ID>/run_dir")
     args = parser.parse_args(argv)
 
     site = args.site_id
     site_root = args.result_dir.resolve() / site
-    run_dir = site_root / "run_dir"
+    run_dir = args.run_dir.resolve() if args.run_dir else site_root / "run_dir"
     namelist_path = run_dir / f"{site}.namelist"
     if not namelist_path.exists():
         print(f"ERROR: {namelist_path} not found; create the run folder first.", file=sys.stderr)
@@ -202,7 +205,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"ERROR: full run failed: {summary['error']}", file=sys.stderr)
         print(f"Last {LOG_TAIL_LINES} lines of {final['log']}:", file=sys.stderr)
         print("\n".join(final["log_tail"]), file=sys.stderr)
-    progress = update_progress(site, args.result_dir)
+    progress = update_progress(site, args.result_dir) if args.run_dir is None else None
     if progress:
         print(f"Progress tracker: {progress}")
     return 0 if summary["status"] == "passed" else 1
