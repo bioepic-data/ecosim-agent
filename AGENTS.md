@@ -46,7 +46,11 @@ except `CHL` for C3 trees, which defaults to 0.12 (recorded as a user default)
 when no usable literature value is found. Run full simulations with
 `ameriflux-namelist-generator/scripts/run_site_full.py`; if a run fails partway,
 continue it once by setting `continue_run=.true.` in the run namelist, and if
-that also fails, report the error. For several sites, prepare each site this
+that also fails, report the error. When a new project starts, rebuild EcoSIM
+first (`ecosim-multisite-project/scripts/rebuild_ecosim.py --record
+result/projects/<PROJECT>/ecosim_build.json`) and use that executable
+(`ECOSIM_EXE`) for every smoke and full run of the project; stop and report if
+the rebuild fails. For several sites, prepare each site this
 way, then assemble them with `./.agents/skills/ecosim-multisite-project/SKILL.md`
 into `result/projects/<PROJECT>/{input,run_dir}/<SITE_ID>/`. The site-input scripts (climate, grid, unified
 extractor, run-folder assembly) rescan the tracker automatically when they

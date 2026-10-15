@@ -19,6 +19,7 @@ result/projects/<PROJECT>/
   run_dir/<SITE_ID>/     <SITE_ID>.namelist, input paths ../../input/<SITE_ID>/<file>
   project.json           manifest: per-site inputs, chronology, tracker, smoke, and trait status
   PROJECT.md             the manifest as a table
+  ecosim_build.json      project-start EcoSIM rebuild record (executable, toolchain); log ecosim_build.log
 ```
 
 Each case stays self-contained: its own grid, climate, plant management, the
@@ -29,12 +30,39 @@ site-corrected PFT parameter copy, GHG, and microbial files. Backups
 
 1. Choose a project name (from the user, or a short descriptive one) and the
    site list.
-2. Prepare every site with the single-site workflow
+2. Rebuild EcoSIM before any smoke (dry) run of the new project, so every case
+   runs the current Fortran source:
+
+   ```bash
+   python .agents/skills/ecosim-multisite-project/scripts/rebuild_ecosim.py \
+     --record result/projects/<PROJECT>/ecosim_build.json
+   export ECOSIM_EXE=<"executable" from the record>
+   ```
+
+   The script builds in the VSCode integrated-terminal environment (workspace
+   `.vscode/settings.json` over user settings: default profile shell and args,
+   `terminal.integrated.env.<os>` with `${env:...}` expanded; the default shell
+   when no settings exist), reuses the `build/<config>` whose `CMakeCache.txt`
+   compilers match that environment's `CC`/`FC`, and runs
+   `cmake --build <dir> --target install --parallel <jobs>` from the EcoSIM root
+   (the install step of `build_EcoSIM.sh`; without it `bin/ecosim.f90.x` stays old). A cached Python
+   interpreter that no longer exists (e.g. `ECOSIM_TIMING_PYTHON` after a
+   Homebrew upgrade) is re-pointed to the terminal's `python3` by reconfiguring
+   that build directory. It passes only when the executable exists and no
+   `f90src/**/*.F90` is newer than it. With no matching build directory it
+   stops unless `--configure` is given (then `bash build_EcoSIM.sh`). The
+   record (`ecosim_build.json`, log `ecosim_build.log`) holds the executable,
+   build directory, compilers, and shell; report the toolchain with the
+   results. If the rebuild fails, stop and report the log instead of running
+   smoke tests with an older executable. Record the executable in each site
+   tracker (`set --step executable --status done --note <path>`).
+3. Prepare every site with the single-site workflow
    (`ameriflux-namelist-generator` `references/runfolder_workflow.md`), each in
    `result/<SITE_ID>/` with its own progress tracker: data preparation, run
    folder, 2-year smoke run, and plant-trait correction. Sites are independent;
-   report per-site problems instead of stopping the whole project.
-3. Assemble the project:
+   report per-site problems instead of stopping the whole project. Run the
+   smoke runs with `ECOSIM_EXE` from step 2 exported.
+4. Assemble the project:
 
    ```bash
    python .agents/skills/ecosim-multisite-project/scripts/assemble_project.py \
@@ -46,10 +74,10 @@ site-corrected PFT parameter copy, GHG, and microbial files. Backups
    rewrites namelist paths to `../../input/<SITE_ID>/`, checks that every path
    resolves from `run_dir/<SITE_ID>/`, and writes `project.json` and
    `PROJECT.md`. It exits nonzero if any site was skipped or has path problems.
-4. Report from `PROJECT.md`: one row per site with PFTs, chronology, climate
+5. Report from `PROJECT.md`: one row per site with PFTs, chronology, climate
    years, stage status, smoke run, and trait findings, plus the sites left out
    and why.
-5. To add sites or pick up changes, fix them in `result/<SITE_ID>/` and rerun
+6. To add sites or pick up changes, fix them in `result/<SITE_ID>/` and rerun
    the script with those sites; other sites in the manifest are kept. Model
    output already in a project run directory is kept unless `--replace-runs`.
 

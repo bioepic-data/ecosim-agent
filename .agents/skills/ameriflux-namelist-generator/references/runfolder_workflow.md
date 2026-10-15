@@ -106,7 +106,9 @@ asks or gives its path; otherwise report the executable assumption.
 
 ## Multiple Sites
 
-When the request covers several sites, prepare each site with this workflow in
+When the request covers several sites, first rebuild EcoSIM for the new project
+(`ecosim-multisite-project` step 2, `scripts/rebuild_ecosim.py`) and export the
+executable as `ECOSIM_EXE` before any smoke run; then prepare each site with this workflow in
 its own `result/<SITE_ID>/` (with its own tracker, smoke run, and trait
 check), then sort them into one project with the `ecosim-multisite-project`
 skill: `result/projects/<PROJECT>/input/<SITE_ID>/` and
