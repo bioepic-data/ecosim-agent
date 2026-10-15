@@ -30,5 +30,22 @@ class FineEarthWaterContentTests(unittest.TestCase):
         self.assertTrue(math.isnan(gssurgo.fine_earth_water_content(float("nan"), 0.1)))
 
 
+class FragmentVolumeTests(unittest.TestCase):
+    def test_horizons_without_fragment_rows_have_no_rock(self):
+        import pandas as pd
+
+        hz = pd.DataFrame({"chkey": ["a", "b", "c"]})
+        fr = pd.DataFrame({"chkey": ["a", "a", "c"], "fragvol_r": [5.0, 10.0, None]})
+        out = gssurgo.merge_fragment_volume(hz, fr)
+        self.assertEqual(out["fragvol_r"].tolist(), [15.0, 0.0, 0.0])
+
+    def test_empty_fragment_table_means_no_rock(self):
+        import pandas as pd
+
+        hz = pd.DataFrame({"chkey": ["a", "b"]})
+        out = gssurgo.merge_fragment_volume(hz, pd.DataFrame(columns=["chkey", "fragvol_r"]))
+        self.assertEqual(out["fragvol_r"].tolist(), [0.0, 0.0])
+
+
 if __name__ == "__main__":
     unittest.main()

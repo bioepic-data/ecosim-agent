@@ -115,6 +115,46 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan["unresolved"], [])
         self.assertEqual(plan["satisfied_by_rule"][0]["variable"], "SLA1")
 
+class C4CompoundTests(unittest.TestCase):
+    """The C4 checker names expressions; each maps to the one parameter it fixes."""
+
+    VALUES = {"VCMX": 75.0, "VOMX": 15.0, "XKCO2": 30.0, "XKO2": 810.0, "RUBP": 0.025, "PEPC": 0.05,
+              "VCMX4": 150.0, "CNWL": 2.6, "CNLF": 0.1, "CPWL": 28.4, "CPLF": 0.01}
+    REPORT = {"findings": [
+        {"severity": "ERROR", "pft_code": "gr4s31", "parameter": p, "message": "strict physiology"}
+        for p in ("VCMX/VOMX", "XKO2", "RUBP/leaf-protein-pool", "VCMX4*PEPC/VCMX*RUBP")]}
+    EVIDENCE = {"plants": [{"pft_code": "gr4s31",
+        "numeric_ranges": [{"variable": "XKO2", "min": 402.0, "max": 415.0},
+                           {"variable": "XKCO2", "min": 18.5, "max": 21.0}],
+        "derived_ranges": [{"variable": "C4_RUBISCO_TURNOVER_RATIO", "min": 3.86, "max": 4.67},
+                           {"variable": "RUBISCO_LEAF_N_FRACTION", "min": 0.05, "max": 0.063},
+                           {"variable": "VPMAX_VCMAX", "min": 1.72, "max": 1.78}]}]}
+
+    def setUp(self):
+        plan = tc.plan_corrections(self.REPORT, self.EVIDENCE, {"gr4s31": dict(self.VALUES)})
+        self.new = {c["variable"]: c["new"] for c in plan["corrections"]}
+        self.unresolved = plan["unresolved"]
+
+    def test_quartet_matches_measured_kinetics(self):
+        self.assertAlmostEqual(75.0 / self.new["VOMX"], (3.86 + 4.67) / 2)
+        self.assertAlmostEqual(self.new["XKCO2"], 19.75)
+        self.assertAlmostEqual(self.new["XKO2"], 408.5)
+
+    def test_rubp_from_leaf_n_fraction(self):
+        self.assertAlmostEqual(self.new["RUBP"], 0.0565 * 3.3 / 2.6)
+
+    def test_vcmx4_uses_corrected_rubp(self):
+        ratio = self.new["VCMX4"] * 0.05 / (75.0 * self.new["RUBP"])
+        self.assertAlmostEqual(ratio, 1.75)
+        self.assertEqual(self.unresolved, [])
+
+    def test_missing_ranges_are_unresolved(self):
+        plan = tc.plan_corrections(self.REPORT, {"plants": [{"pft_code": "gr4s31"}]}, {"gr4s31": dict(self.VALUES)})
+        self.assertEqual({u["variable"] for u in plan["unresolved"]},
+                         {"VCMX/VOMX", "XKO2", "RUBP/leaf-protein-pool", "VCMX4*PEPC/VCMX*RUBP"})
+        self.assertEqual(plan["corrections"], [])
+
+
 
 @unittest.skipUnless(PFTPAR.exists(), "shared PFT parameter file not available")
 class ApplyTests(unittest.TestCase):

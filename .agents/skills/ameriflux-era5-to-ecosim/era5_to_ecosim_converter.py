@@ -209,12 +209,15 @@ def discover_in_situ_file(era5_file, site_id=None):
             cadence_order.append(cadence)
     cadence_order.extend(cadence for cadence in ("HH", "HR") if cadence not in cadence_order)
 
+    # FLUXNET v1.3 releases ship the gap-filled tower meteorology as FLUXMET
+    # instead of FULLSET, with the same columns.
     patterns = []
     for cadence in cadence_order:
-        if resolved_site_id:
-            patterns.append(f"AMF_{resolved_site_id}_FLUXNET_FULLSET_{cadence}_*.csv")
-        else:
-            patterns.append(f"*_FLUXNET_FULLSET_{cadence}_*.csv")
+        for product in ("FULLSET", "FLUXMET"):
+            if resolved_site_id:
+                patterns.append(f"AMF_{resolved_site_id}_FLUXNET_{product}_{cadence}_*.csv")
+            else:
+                patterns.append(f"*_FLUXNET_{product}_{cadence}_*.csv")
 
     for pattern in patterns:
         candidates = sorted(glob.glob(os.path.join(source_dir, pattern)))

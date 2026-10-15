@@ -353,16 +353,27 @@ def load_horizons(gdb_path: str, cokey: str) -> pd.DataFrame:
             columns=actual_columns(gdb_path, "chfrags", ["chkey", "fragvol_r"]),
             read_geometry=False,
         )
-        if not fr.empty:
-            fr = canonicalize_columns(fr)
-            rock = fr.groupby("chkey", as_index=False)["fragvol_r"].sum()
-            rock["fragvol_r"] = rock["fragvol_r"].clip(lower=0, upper=100)
-            hz = hz.merge(rock, on="chkey", how="left")
-        else:
-            hz["fragvol_r"] = np.nan
+        hz = merge_fragment_volume(hz, canonicalize_columns(fr) if not fr.empty else fr)
     except Exception:
         hz["fragvol_r"] = np.nan
 
+    return hz
+
+
+def merge_fragment_volume(hz: pd.DataFrame, fr: pd.DataFrame) -> pd.DataFrame:
+    """Attach total rock-fragment volume (%) per horizon from a readable chfrags table.
+
+    SSURGO stores chfrags rows only for horizons that contain fragments, so a
+    horizon without rows has 0 % fragments rather than an unknown amount.
+    """
+
+    if fr.empty:
+        rock = pd.DataFrame({"chkey": hz["chkey"], "fragvol_r": 0.0})
+    else:
+        rock = fr.groupby("chkey", as_index=False)["fragvol_r"].sum()
+        rock["fragvol_r"] = rock["fragvol_r"].clip(lower=0, upper=100)
+    hz = hz.drop(columns=["fragvol_r"], errors="ignore").merge(rock, on="chkey", how="left")
+    hz["fragvol_r"] = hz["fragvol_r"].fillna(0.0)
     return hz
 
 
@@ -919,7 +930,7 @@ def build_gssurgo_output(args: argparse.Namespace, target_depths: np.ndarray) ->
             "WP_formula": "(wfifteenbar_r / 100) / (1 - ROCK); whole-soil volumetric -> fine-earth volumetric",
             "SCN_formula": "ksat_r [um/s] * 3.6 => mm/h",
             "CSAND_CSILT_formula": "percent * 10 => kg/Mg",
-            "ROCK_source": "sum(chfrags.fragvol_r) / 100",
+            "ROCK_source": "sum(chfrags.fragvol_r) / 100; 0 for horizons without chfrags rows",
             "CORGC_formula": "om_r [%] * 10 * 0.58 => kg C / Mg soil",
             "CORGC_interpolation": "overlap-weighted geometric mean on target layers",
         },

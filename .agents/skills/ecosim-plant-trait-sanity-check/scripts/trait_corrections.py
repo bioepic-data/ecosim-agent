@@ -25,6 +25,13 @@ invented value. Rules:
 - CHL for C3 trees without a literature range: the user default 0.12, recorded
   as evidence level "user-default" (C3 Jmax scales with ETMX*CHL, so the
   resulting protein-normalized Jmax:Vcmax is recorded too).
+- C4 compound findings, each from a ``derived_ranges`` entry:
+  ``VCMX/VOMX`` -> VOMX = VCMX / C4_RUBISCO_TURNOVER_RATIO midpoint, with XKCO2
+  also set from its literature range when given, so specificity stays
+  consistent with the measured quartet; ``RUBP/leaf-protein-pool`` -> RUBP =
+  RUBISCO_LEAF_N_FRACTION midpoint * 3.3 / effective CNWL (the checker's
+  conversion); ``VCMX4*PEPC/VCMX*RUBP`` -> VCMX4 = VPMAX_VCMAX midpoint *
+  VCMX * RUBP / PEPC, using the corrected RUBP.
 """
 
 from __future__ import annotations
@@ -44,6 +51,11 @@ RUBISCO_PARAMETER = "VCMX/VOMX/XKCO2/XKO2"
 C3_TREE_PFTS = ("ndlf", "ndld", "bdlf", "bdln", "bdlw", "bspr", "dfir", "jpin", "lpin", "tasp", "woak")
 C3_TREE_CHL_DEFAULT = 0.12
 IC3_PHOTO = 3  # ElmIDMod ic3_photo
+# C4 compound checker parameters -> derived literature range that fixes them.
+C4_TURNOVER_PARAMETER, C4_TURNOVER_KEY = "VCMX/VOMX", "C4_RUBISCO_TURNOVER_RATIO"
+RUBISCO_N_PARAMETER, RUBISCO_N_KEY = "RUBP/leaf-protein-pool", "RUBISCO_LEAF_N_FRACTION"
+VPMAX_PARAMETER, VPMAX_KEY = "VCMX4*PEPC/VCMX*RUBP", "VPMAX_VCMAX"
+ENZYME_C_PER_N = 3.3  # gC protein gN-1, the checker's enzyme conversion
 EXPECTED_CODE = re.compile(r"is expected to use .*\((\d+)\); found")
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
@@ -58,6 +70,13 @@ def jmax_to_vcmax(values: Dict[str, float], chl: float) -> Optional[float]:
     if all(values.get(k) for k in ("ETMX", "VCMX", "RUBP")):
         return values["ETMX"] * chl / (3.5 * values["VCMX"] * values["RUBP"])
     return None
+
+
+def effective_cnwl(values: Dict[str, float]) -> Optional[float]:
+    """Leaf protein C per leaf N, min(CNWL*CNLF, CPWL*CPLF)/CNLF, as the checker defines it."""
+    if not all(values.get(k) for k in ("CNWL", "CNLF", "CPWL", "CPLF")):
+        return None
+    return min(values["CNWL"] * values["CNLF"], values["CPWL"] * values["CPLF"]) / values["CNLF"]
 
 
 def is_severe(finding: Dict[str, Any]) -> bool:
@@ -157,6 +176,44 @@ def plan_corrections(
                 "evidence": citation(entry),
             }
             continue
+        if variable == C4_TURNOVER_PARAMETER:
+            entry = ranges.get(C4_TURNOVER_KEY)
+            if entry is None or not values.get("VCMX"):
+                unresolved.append({"finding": message, "pft": pft, "variable": variable,
+                                   "reason": f"no literature {C4_TURNOVER_KEY} range in web evidence"
+                                   if entry is None else "VCMX not readable from the PFT parameter file"})
+                continue
+            target, rule = literature_target(C4_TURNOVER_KEY, entry)
+            corrections[(pft, "VOMX")] = {
+                "pft": pft, "variable": "VOMX", "old": values.get("VOMX"), "new": values["VCMX"] / target,
+                "rule": f"VOMX = VCMX/{target:.4g} ({rule}); VCMX kept", "evidence": citation(entry),
+            }
+            kc_entry = ranges.get("XKCO2")
+            if kc_entry is not None:
+                kc_target, kc_rule = literature_target("XKCO2", kc_entry)
+                corrections[(pft, "XKCO2")] = {
+                    "pft": pft, "variable": "XKCO2", "old": values.get("XKCO2"), "new": kc_target,
+                    "rule": f"{kc_rule}; set with VOMX so the Rubisco quartet matches the measured kinetics",
+                    "evidence": citation(kc_entry),
+                }
+            continue
+        if variable == RUBISCO_N_PARAMETER:
+            entry = ranges.get(RUBISCO_N_KEY)
+            cnwl = effective_cnwl(values)
+            if entry is None or cnwl is None:
+                unresolved.append({"finding": message, "pft": pft, "variable": variable,
+                                   "reason": f"no literature {RUBISCO_N_KEY} range in web evidence"
+                                   if entry is None else "CNWL, CNLF, CPWL, or CPLF not readable"})
+                continue
+            target, rule = literature_target(RUBISCO_N_KEY, entry)
+            corrections[(pft, "RUBP")] = {
+                "pft": pft, "variable": "RUBP", "old": values.get("RUBP"), "new": target * ENZYME_C_PER_N / cnwl,
+                "rule": f"RUBP = {target:.4g} leaf-N fraction ({rule}) x {ENZYME_C_PER_N} / effective CNWL {cnwl:.4g}",
+                "evidence": citation(entry),
+            }
+            continue
+        if variable == VPMAX_PARAMETER:
+            continue  # after RUBP, below
         entry = ranges.get(variable)
         if entry is None and variable == "CHL" and is_c3_tree(pft, values):
             ratio_old = jmax_to_vcmax(values, values["CHL"]) if values.get("CHL") else None
@@ -182,6 +239,26 @@ def plan_corrections(
             continue
         corrections[(pft, variable)] = {
             "pft": pft, "variable": variable, "old": old, "new": target, "rule": rule, "evidence": citation(entry),
+        }
+
+    for finding in severe:
+        if finding["parameter"] != VPMAX_PARAMETER:
+            continue
+        pft, message = finding["pft_code"], finding["message"]
+        values = current.get(pft, {})
+        entry = literature_ranges(plant_evidence(evidence, pft)).get(VPMAX_KEY)
+        rubp = corrections.get((pft, "RUBP"), {}).get("new", values.get("RUBP"))
+        if entry is None or not all((values.get("VCMX"), values.get("PEPC"), rubp)):
+            unresolved.append({"finding": message, "pft": pft, "variable": VPMAX_PARAMETER,
+                               "reason": f"no literature {VPMAX_KEY} range in web evidence"
+                               if entry is None else "VCMX, PEPC, or RUBP not readable"})
+            continue
+        target, rule = literature_target(VPMAX_KEY, entry)
+        corrections[(pft, "VCMX4")] = {
+            "pft": pft, "variable": "VCMX4", "old": values.get("VCMX4"),
+            "new": target * values["VCMX"] * rubp / values["PEPC"],
+            "rule": f"VCMX4 = {target:.4g} ({rule}) x VCMX*RUBP/PEPC with RUBP {rubp:.4g}; PEPC kept",
+            "evidence": citation(entry),
         }
 
     return {"corrections": list(corrections.values()), "unresolved": unresolved, "satisfied_by_rule": satisfied}

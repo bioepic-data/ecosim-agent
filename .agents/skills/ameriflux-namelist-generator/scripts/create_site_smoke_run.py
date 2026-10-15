@@ -273,7 +273,8 @@ def correction_round(site: str, site_root: Path, smoke_dir: Path, summary: Dict[
         return {"corrections": [], "satisfied_by_rule": [], "unresolved": [
             {"finding": f["message"], "pft": f["pft_code"], "variable": f["parameter"],
              "reason": f"PFT parameter file {pft_file} not found"} for f in severe]}
-    variables = ["VCMX", "VOMX", "XKCO2", "XKO2", "SLA1", "CHL", "ETMX", "RUBP", "ICTYP"] + sorted(
+    variables = ["VCMX", "VOMX", "XKCO2", "XKO2", "SLA1", "CHL", "ETMX", "RUBP", "ICTYP",
+                 "PEPC", "VCMX4", "CNWL", "CNLF", "CPWL", "CPLF"] + sorted(
         {f["parameter"] for f in report_data.get("findings", []) if "/" not in f["parameter"] and "*" not in f["parameter"]}
     )
     current = {}
