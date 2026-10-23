@@ -1,0 +1,4 @@
+interface:
+  display_name: "EcoSIM Run-folder Summary"
+  short_description: "Explain EcoSIM landscape, hydrology, and vegetation"
+  default_prompt: "Use $ecosim-runfolder-summary to explain this EcoSIM run folder, including topography, hydrology and lateral exchange, vegetation management, forcing, and unresolved inputs."
