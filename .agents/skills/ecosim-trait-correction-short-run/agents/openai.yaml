@@ -1,0 +1,4 @@
+interface:
+  display_name: "EcoSIM Short-Run Trait Correction"
+  short_description: "Correct PFT traits with five-day model runs"
+  default_prompt: "Use $ecosim-trait-correction-short-run to correct the PFT parameters selected by this EcoSIM namelist using five-day simulations and plant_trait.desc validation."

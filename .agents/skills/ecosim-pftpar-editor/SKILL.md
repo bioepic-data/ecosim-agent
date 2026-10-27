@@ -59,6 +59,10 @@ If `.venv-cmip6/bin/python` is unavailable, use any Python that can
 
 ## Workflow
 
+For a run/check/correct loop on an existing case, use
+[ecosim-trait-correction-short-run](../ecosim-trait-correction-short-run/SKILL.md).
+It defaults to five-day simulations and validates model-generated trait output.
+
 1. List available PFT codes and locate the record before editing:
 
    ```python

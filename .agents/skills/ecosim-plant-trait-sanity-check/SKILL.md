@@ -185,6 +185,12 @@ The script returns a nonzero status when `ERROR` findings are present or when no
 
 ## Reporting Guidance
 
+For iterative correction of an existing case through five-day runs and fresh
+trait read-back, use
+[ecosim-trait-correction-short-run](../ecosim-trait-correction-short-run/SKILL.md).
+That workflow uses this checker and the PFT editor; history analysis is disabled
+by default.
+
 Never edit the trait file. This skill is a diagnostic pass. Report recommended
 corrections and, when the user asks to apply them, update the corresponding
 `ecosim_pftpar_*.nc` file through the `ecosim-pftpar-editor` skill and
