@@ -36,7 +36,7 @@ NCYC_SNOW=${NCYC_SNOW}
 !set up output frequency
 hist_mfilt=${hist_mfilt}
 hist_fincl1='ECO_RA_col','ECO_RH_col','ECO_NPP_col', 'Root_AR_col','ECO_HR_CO2_col','Root1stSinkWeight_pvr',
-  'TEMP_vr','rWatFLP_vr','BOTDEPZ_vr','tSOC_vr','RootC_vr','RootC_2nd_pvr','CanopyLAIZ_plyr','Root2ndSinkWeight_pvr',
+  'Temp_vr','rWatFLP_vr','BOTDEPZ_vr','tSOC_vr','RootC_vr','RootC_2nd_pvr','CanopyLAIZ_plyr','Root2ndSinkWeight_pvr',
   'RUB_ACTVN_pft','RootNutUptk_fClim_pvr','RootNutUptk_fNlim_pvr','RootNutUptk_fPlim_pvr','RootNutUptk_fProtC_pvr',
   'HR_CO2_vr','Root_OXYSTRESS_pvr','Decomp_OStress_vr','Decomp_OStress_LITR','GasXSurfConduct_col','CO2_DIF_FLX_col',
   'CO2_PLTROOT_FLX_col','TreeRingRadius_pft','RootLDS_pvr','RootKond2H2O_pvr','Growth_Stage_pft','PSI_vr','MycoArbuBiomC_pft',
