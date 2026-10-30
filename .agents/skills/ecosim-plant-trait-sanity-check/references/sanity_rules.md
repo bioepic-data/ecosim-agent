@@ -88,6 +88,32 @@ Apply these as pathway-aware physiological warnings. Promote them to errors when
 
 Use web evidence to narrow these ranges for a species, cultivar, nitrogen treatment, growth stage, and measurement protocol. Useful foundations include the corrected Rubisco kinetic compilation (https://doi.org/10.1093/jxb/erab383), maize nitrogen allocation (https://doi.org/10.3389/fpls.2016.00699), maize seasonal capacity ratios (https://doi.org/10.1111/pce.13511), and maize mesophyll/bundle-sheath chlorophyll partitioning (https://doi.org/10.1104/pp.51.6.1133).
 
+## Organ N:C And P:C As Growth Stoichiometry
+
+Verified 2026-10-28 at EcoSIM commit `5dc6fe57` (`PlantBranchMod.F90`, `GrosubsMod.F90`, `PlantBGCPars.F90`); recheck in the active revision.
+
+- `CNLF` and `CPLF` are the maximum N:C and P:C of new leaf tissue, not fixed leaf concentrations. New leaf N:C is `CNLF*(ZPLFM + ZPLFD*CNPG)` with `ZPLFM = 0.33`, `ZPLFD = 0.67`, so realized leaf N:C ranges from `0.33*CNLF` (fully stressed) to `CNLF`. The same form applies to P.
+- `CNPG = min(CNG, CPG)`, where `CNG = N/(N + C*CNKI)` and `CPG` likewise are computed from the leaf non-structural N, P and C pools against fixed constants. They are reported as `CanopyNLim_pft` and `CanopyPLim_pft`; 1 means no limitation. The source comment in `PlantBranchMod.F90` that calls them "[0->1] stronger limitation" is inverted.
+- Growth is capped by `non-structural N * growth yield / N needed per unit new C`, and leaf terms of that requirement scale with `CNLF` (P: `CPLF`). A higher `CNLF` lets the same N pool support less growth and draws the non-structural pool down harder, which lowers `CNG` indirectly; `CNG` is not computed relative to `CNLF`.
+- Leaf N remobilization keeps at least `0.33*CNLF*leaf C` in the leaf.
+- Leaf protein C is `min(N*CNWL, P*CPWL)` of the leaf, and protein sets Rubisco, chlorophyll, Vcmax and Jmax. Lowering `CNLF` therefore lowers the maximum leaf protein and photosynthetic capacity per leaf area while easing N demand for leaf growth. Do not predict the net GPP effect of a `CNLF` change from either side alone; test it.
+- Compare `CNLF` and `CPLF` with literature leaf N and P of well-supplied foliage (dry-mass values divided by the leaf C fraction), and compare realized output (`fLEAF_CN_pft`, `fLEAF_CP_pft`) with field leaf N and P. Before attributing low growth to a nutrient trait, check `CanopyNLim_pft` and `CanopyPLim_pft` and the soil nutrient inputs (initial soil P pools, fertilization).
+
+## Shoot-Root Exchange (`PTSHT`)
+
+- `PTSHT` (h-1) is the rate constant of a gradient-driven exchange of non-structural C, N and P between each branch and each root layer (`PlantNonstElmDynMod.F90`, commit `5dc6fe57`). C moves toward the organ with the lower non-structural C concentration; N and P move by their own gradients, with a transpiration-driven upward term. For annuals it is scaled by leaf allocation; for perennials it is used directly.
+- `PTSHT` is not an allocation fraction. Raising it speeds up equilibration in both directions and need not increase root C. In one perennial C3 grass test, doubling it changed root C by +3% and fluxes negligibly.
+
+## Thermal Adaptation Zone (`ZTYPI`)
+
+- `ZTYPI` sets `TempOffset = 2.667*(2.5 - ZTYPI)` degrees C, added to canopy and soil temperature in the Arrhenius functions for carboxylation, oxygenation and electron transport (`StomatesMod.F90`), growth and respiration (`GrosubsMod.F90`), and node/leaf rates. It also sets the leaf-out threshold `5 - TempOffset` C (`InitPlantMod.F90`), the seed heat-stress limit, and branch leaf-out/off hour requirements. Zone 2 (cool temperate) is +1.33 C; zone 3 (warm temperate) is -1.33 C. Changing it shifts all temperature responses together; it does not add or remove a vernalization requirement.
+
+## Floral Initiation In Evergreen Perennial Grasses
+
+- For an evergreen perennial (`IWTYP` evergreen, `ISTYP` perennial), floral initiation (`InitiateBranchFloral`, `PlantPhenolMod.F90`, commit `5dc6fe57`) requires `ShootNodeNum > MatureGroup + ShootNodeNumAtInitFloral`, with `MatureGroup = GROUPX - XTLI` (both divided by 25 when `IBTYP != 0`), plus leaf-out completion and, for long-day plants, `max(XDL - daylength, 0) < XPPD`. `XDL < 0` is replaced by the site maximum daylength.
+- `ShootNodeNumAtInitFloral` is reset to the current node number at every spring leaf-out (`ResetNonAnnualBranch`, `PlantBranchMod.F90`) and at every cut above the cutting height (`ResetCutBranch`, `PlantDisturbsMod.F90`). There is no vernalization anywhere in `f90src`. Cool-season grasses that are induced over winter and head in spring therefore cannot be reproduced by `GROUPX`, `XRNI` or `XDL` alone: high `GROUPX` gives no flowering, intermediate values give initiation only in long gaps between summer cuts, and low values allow repeated summer re-initiation. Treat this as a model-design limit, not a trait error; report it rather than tuning traits to force a flowering date.
+- The cold-deciduous perennial path has a separate seasonal trigger (shortening days). Do not switch an evergreen grass to deciduous to obtain it: that also imposes autumn leaf-off and removes winter photosynthesis.
+
 ## Woody Versus Herbaceous Root Blocks
 
 Woody short codes include common EcoSIM trees and shrubs such as `ndlf`, `ndld`, `bdlf`, `bdln`, `bdlw`, `bspr`, `dfir`, `jpin`, `lpin`, `tasp`, `woak`, `shru`, `bush`, and `busn`.
