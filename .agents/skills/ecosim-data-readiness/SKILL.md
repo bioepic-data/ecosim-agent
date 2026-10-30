@@ -39,6 +39,12 @@ model output and observations without requiring all simulation input categories.
 If necessary context cannot be inferred, request the missing site, period, or
 input choice while continuing independent work.
 
+For an EcoSIM run namelist, use
+[`ecosim-climate-readiness`](../ecosim-climate-readiness/SKILL.md) for the
+automated climate-file check. It resolves forcing periods and restart scope,
+then checks actual required records. Preserve its errors and clock/provenance
+limitations; year-coordinate coverage alone is not climate readiness.
+
 For each required input, select the actual file and inspect its contents:
 
 - **Access and identity:** Verify readability, format, required variables,
