@@ -67,6 +67,8 @@ DDMMYYYY ICUT JCUT HCUT PCUT ECUT11 ECUT12 ECUT13 ECUT14 ECUT21 ECUT22 ECUT23 EC
 ```
 
 `PlantMgmtWriter.py` writes this as a comma-separated string. The Fortran reader uses list-directed `READ`, so comma-separated and whitespace-separated fields are both valid as long as all 13 fields are present.
+The three-field planting string can also use commas, whitespace, or both;
+the bridge normalizes delimiters without changing the date, population, or depth.
 
 `ICUT` values:
 
@@ -97,6 +99,12 @@ harvested_from_pft = component_pool * pft_level_harvest_fraction
 exported_from_ecosystem = harvested_from_pft * ecosystem_level_harvest_fraction
 litter_return = harvested_from_pft * (1 - ecosystem_level_harvest_fraction)
 ```
+
+In grain mode, inspect PFT fine-nonleaf removal and ecosystem fine-nonleaf
+export in the branch's `PlantDisturbsMod.F90`. Zero export means the grain
+export term is zero even when `ICUT=1` and `JCUT=1`. Termination is not a
+substitute for intended removal/export. Residue left at the surface is not
+automatically residue exported from the ecosystem.
 
 Date caveat: the selected `PlantInfoMod.F90` parses `DDMMYYYY`, calls `isLeap(IYR)`, and then computes ordinal day. `MiniMathMod.isLeap(0)` is true, so dates with year `0000` are treated as leap-year dates. For transient annual schedules, use the actual year in `DDMMYYYY` if exact non-leap day alignment is important; reserve `0000` for deliberately yearless management conventions.
 

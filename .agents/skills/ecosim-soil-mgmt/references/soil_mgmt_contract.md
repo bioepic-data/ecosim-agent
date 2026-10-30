@@ -38,7 +38,10 @@ NO       no management of that type
 auto*    irrigation selector beginning with auto triggers automated irrigation parsing
 ```
 
-The reader searches `year` for the forcing year (`yeari`). If no matching year exists, the shown reader loop has no explicit bound check, so files should cover every forcing year in the run.
+Check the actual branch's year-selection code: `ReadManagementFiles` normally
+selects forcing year `yeari`; `soil_mgmt_use_model_year` can select simulation
+year instead. Cover every selected year. The current reader stops when a year
+is missing; legacy branches may lack that bound check.
 
 ## Fertilizer Rows
 
@@ -90,6 +93,10 @@ Useful conversion:
 ```
 
 The reader assigns these fields directly to `FERT(...)`, `FDPTH`, `ROWI`, and `IYTYP`.
+These are daily slots: multiple fertilizer rows on the same date can overwrite
+rather than add doses. Consolidate only after reconciling products, placement,
+and source duplication; preserve the intended nutrient totals. A nonzero width
+parameter alone does not populate band nutrient channels.
 
 ## Tillage Rows
 
@@ -107,6 +114,13 @@ Reader meaning:
 iSoilDisturbType  1-20 tillage, 21 litter removal, 22 fire, 23-24 drainage
 DepzCorp          intensity for fire or depth for tillage/drainage
 ```
+
+In the current `DayMod.F90`, codes 1-10 give mixing fraction `code/10`, and
+codes 11-20 give `(code-10)/10`, with the result bounded to [0, 1]. Thus codes
+1 and 3 imply fractions 0.1 and 0.3; they are not fixed plow/disk identifiers.
+Read the branch's process code before assigning implement proxies and keep
+depth separate from mixing fraction. Document benchmark-derived proxies and
+check same-day tillage rows for daily-slot overwrites.
 
 ## Irrigation Rows
 
@@ -141,6 +155,30 @@ WDPTH    depth of irrigation application, m
 PHQ      pH
 ions     g m-3 in irrigation water; reader converts to molar concentration
 ```
+
+`JST` and `JEN` are inclusive: require `1 <= JST <= JEN <= 24`, `RR >= 0`,
+and hourly water rate `RR / (JEN-JST+1) / 1000` in m/h. The N and P ion fields
+are elemental N/P concentrations: the reader divides NH4/NO3 by 14 and H2PO4
+by 31. Include waterborne N in the budget:
+
+```text
+fertilizer N [kg/ha] = sum(eight soil/band N fields [g/m2]) * 10
+irrigation N [kg/ha] = sum(RR [mm] * (NH4-N + NO3-N) [g/m3]) * 0.01
+combined N = fertilizer-table N + irrigation-water N
+```
+
+Reconcile source events before adding channels so fertigation is not counted
+twice. Distinguish calendar-year totals, autumn applications for the next crop,
+and crop-season budgets.
+
+The current reader adds hourly water pulses but stores chemistry and application
+depth as daily properties. Nonzero same-day pulses must have identical pH,
+ion concentrations, and application depth; conflicting properties stop the run.
+If a volume-weighted daily concentration is chosen as a documented approximation,
+use `sum(RR_i*C_i)/sum(RR_i)`, preserve water amounts/windows, and verify each
+solute's daily mass. This changes pulse-level nutrient timing. Do not average
+pH arithmetically or blend differing application depths without a justified
+policy. Check the actual branch before relying on this behavior.
 
 Automated irrigation is used when the selector begins with `auto`. The first row of the referenced variable has:
 
@@ -317,3 +355,55 @@ record counts fit reader limits
 ```
 
 The Fortran reader uses the event-string year for leap-year day-of-year conversion. A typo such as `07120090` will be treated as year 0090; it may land on the same day-of-year as the intended non-leap year, but it is still a data-quality issue.
+
+## Fixed-width string compatibility
+
+Write populated fixed-width text with ASCII space padding, never NUL padding.
+Fortran `TRIM` removes trailing spaces, not NUL bytes. For a 10-character
+inactive selector the correct bytes are `b'NO        '`, not
+`b'NO\x00\x00\x00\x00\x00\x00\x00\x00'`.
+The latter is not equal to `NO` in `ReadManagementFiles`, so EcoSIM attempts to
+open a nonexistent tillage/fertilizer/irrigation table. A short active name may
+also be misinterpreted depending on the called interface. NumPy fixed-byte
+strings pad with NULs unless explicitly padded before conversion; the bridge's
+`write_fixed_strlen` now pads all strings and rejects overlong values.
+
+Inspect every `fertf`, `tillf` and `irrigf` record across all configured years
+and topographic units, both in the final input and scratch Excel roundtrip.
+Disable automatic masking so zero bytes cannot disappear as masked values.
+Check that the space-trimmed selector is exactly `NO`, an applicable `auto*`
+selector, or an existing NetCDF variable. Check event-row termination against
+the consuming reader too; blank rows must be spaces where `len_trim` controls
+the event loop. Verify width before casting, rather than silently truncating.
+
+Example check (run with numpy and netCDF4; pass the selected soil file):
+
+```python
+import sys
+import numpy as np
+from netCDF4 import Dataset
+
+with Dataset(sys.argv[1]) as ds:
+    for name in ('fertf', 'tillf', 'irrigf'):
+        var = ds[name]
+        var.set_auto_mask(False)
+        width = var.shape[-1]
+        for index, row in enumerate(np.asarray(var[:]).reshape(-1, width)):
+            raw = row.tobytes()
+            assert b'\x00' not in raw, (name, index, raw)
+            selector = raw.rstrip(b' ').decode('ascii')
+            assert (selector == 'NO' or selector.startswith('auto')
+                    or selector in ds.variables), (name, index, selector)
+```
+
+For a repair, archive the source file and failed run, normalize padding only,
+and compare decoded configurations and numerical variables before/after.
+Regenerate the editable workbook, repeat the byte check after its roundtrip,
+and confirm event dates, rates and water/N/P totals are unchanged. Keep hashes
+and affected variable/byte counts in the site provenance. Use
+`scripts/test_string_padding.py` for the writer regression test.
+
+Exercise a year transition when verifying the repair in EcoSIM. The US-Ne1
+failure occurred only when the next year's inactive tillage selector was read;
+one successful initialization or first year did not expose it. This example
+is a reader-compatibility lesson, not permission to change management schedules.

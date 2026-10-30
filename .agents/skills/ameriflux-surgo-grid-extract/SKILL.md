@@ -23,6 +23,21 @@ description: Extract dominant-component soil profile variables for EcoSIM grid o
 
 ## Workflow
 
+Before deriving a grid, follow the site-evidence review in
+`../ecosim-data-readiness/references/site_conflicts.md`. Run
+`Tools/driving_data_conflicts.py` against the selected site/grid after generation
+or edits. Review terrain, FC pressure basis, layer selection, and hydrologic /
+chemical priors; range checks alone do not establish site consistency.
+Explain each reported issue with the actual source/grid values, units and depth
+support, the violated relationship, its physical consequence, and the required
+reconciliation. Include reproducible equations, at least one worked substitution,
+and the affected-layer mass/capacity calculations required by the reporting
+contract in the site-conflicts reference and the soil-volume contract below.
+For a site run folder, refresh its HTML grid documentation using the checklist
+in `../ameriflux-namelist-generator/references/runfolder_workflow.md` under
+"Document the selected grid". Include actual layer values, provenance and
+conflict status, rather than only describing the soil series.
+
 1. Locate `gSSURGO_CONUS.gdb` under `data/` first, then elsewhere in the repo if needed.
 2. Identify the map unit (`MUKEY`) by spatial query on `MUPOLYGON`.
 3. Select the dominant component by `comppct_r`.
@@ -153,14 +168,28 @@ as incomplete for this skill.
 
 ## Water Retention Basis
 
+Before accepting density and retention values, read
+[references/soil_volume_contract.md](references/soil_volume_contract.md) and run
+the soil-volume audit in `Tools/driving_data_conflicts.py`. Check source bulk
+versus model matrix density, FHOL, organic-adjusted particle density, total and
+matrix porosity, and water-volume/initialization assumptions together. Derived
+porosity is not an independent field observation. Establish measurement pore
+coverage before treating a source/model density difference as a conflict.
+gSSURGO fine-earth density alone does not prove inclusion of the FHOL domain;
+unknown coverage is a conditional warning. Use the reference’s texture/organic-
+matter PTF review for density plausibility, with explicit domains and uncertainty.
+
 gSSURGO `wthirdbar_r` and `wfifteenbar_r` are **volumetric percentages of the
 whole soil** (gSSURGO `mdstattabcols`), not gravimetric, so they are never
 multiplied by bulk density. Across 279,000 CONUS horizons, `(wthirdbar_r -
 wfifteenbar_r)/100` correlates with `awc_r` at r = 0.83, against r = 0.14 after
 multiplying by `dbthirdbar_r`. EcoSIM keeps soil water in the micropore matrix,
-whose volume excludes rock (`FracSoiAsMicP = (1-ROCK)(1-FHOL)`, `readimod.F90`,
-`Hour1Mod.F90`), and compares FC with fine-earth porosity `1 - BKDSI/2.65`
-(`SoilHydroParaMod.F90`), so whole-soil values are divided by `1 - ROCK`. About
+whose volume excludes rock and explicit macropores
+(`FracSoiAsMicP = (1-ROCK)(1-FHOL)`, `readimod.F90`). Dividing whole-soil
+values by `1 - ROCK` addresses the rock denominator only; it does not finish
+the macropore/matrix conversion. The current porosity calculation uses an
+organic-adjusted particle density in `StartsMod.F90`. Reconcile FHOL,
+retention denominators and water occupancy using the volume contract. About
 0.08% of gSSURGO horizons report 1/3-bar water at or below 15-bar water; the
 grid tool sets FC and WP to -1 for such layers so EcoSIM estimates them.
 

@@ -32,6 +32,10 @@ a focused validation before data-dependent work.
 
 ## Workflow validation
 
+When preparing driving data, read [references/site_conflicts.md](references/site_conflicts.md).
+Check site evidence before extraction and again against generated inputs; record
+contradictions, defaults and unavailable evidence separately from format validity.
+
 Determine requirements from the user's task, selected site and period, relevant
 workflow skill, configuration/namelist, and consuming reader or template. Check
 only dependencies of that workflow: for example, output analysis may require
@@ -74,6 +78,19 @@ reading their skill instructions when invoking them. Record unavailable tools
 or incomplete checks as unverified, rather than assuming success.
 
 ## Findings and reports
+
+Explain each issue using the actual data: identify the conflict type, compare
+values on explicit units/volume/depth/time bases, show the violated relationship,
+and describe its consequence and a concrete resolution. Separate confirmed
+contradictions, conditional scenarios and unavailable evidence. Follow the
+detailed reporting contract in `references/site_conflicts.md`; a code or label
+such as "density conflict" alone is insufficient. For quantitative conflicts, include a
+worked numerical substitution and affected-layer/date calculations sufficient
+to reproduce the result; follow the reproducible-calculation contract in that
+reference. A percentage or qualitative summary alone is insufficient.
+Density/macropore mass differences require demonstrated matching measurement
+pore domains to become errors; otherwise report conditional warnings. Use the
+soil-volume reference for measurement-method and PTF plausibility checks.
 
 Assign each relevant input one status:
 

@@ -1084,7 +1084,7 @@ def infer_site_id(rows: list[dict[str, str]], fallback: str) -> str:
     if len(ids) == 1:
         return ids[0]
     if ids:
-        return ids[0]
+        raise SystemExit("Multiple SITE_ID values found; select one with --site-id.")
     return fallback
 
 
@@ -1105,7 +1105,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("input_bif", help="AmeriFlux BIF workbook or CSV")
     parser.add_argument("--out-dir", default="result/ameriflux_bif_ecosim_mgmt", help="Output directory")
     parser.add_argument("--sheet", help="BIF sheet name; defaults to AMF-BIF when present")
-    parser.add_argument("--site-id", help="Override SITE_ID used in output file names")
+    parser.add_argument("--site-id", help="Select SITE_ID rows before extraction; required for multi-site input")
     parser.add_argument("--start-year", type=int)
     parser.add_argument("--end-year", type=int)
     parser.add_argument("--topo", default="1,1,1,1", help="EcoSIM topo bounds NH1,NV1,NH2,NV2")
@@ -1144,14 +1144,17 @@ def main(argv: list[str] | None = None) -> int:
     crop_pft_map = parse_crop_pft_map(args.crop_pft_map, pft_scheme, args.koppen_code)
 
     rows, sheet = read_bif(input_path, args.sheet)
+    site_id = args.site_id.strip() if args.site_id else infer_site_id(rows, input_path.stem)
+    rows = [row for row in rows if row.get("SITE_ID", "").strip() == site_id]
+    if not rows:
+        raise SystemExit(f"No BIF rows found for SITE_ID {site_id!r}.")
     records = reconstruct_records(rows)
     if not records:
         raise SystemExit("No BIF records found.")
-    site_id = args.site_id or infer_site_id(rows, input_path.stem)
 
     plant_cfg, plant_sheets, planting_review, harvest_review, plant_notes = build_plant_outputs(records, args, crop_pft_map, pft_scheme, topo)
     soil_cfg, soil_sheets, fert_review, till_review, unconverted, soil_notes = build_soil_outputs(records, args, topo, plant_cfg["years"])
-    notes = [f"read sheet: {sheet}", *plant_notes, *soil_notes]
+    notes = [f"read sheet: {sheet}", f"selected SITE_ID {site_id}: {len(rows)} source rows", *plant_notes, *soil_notes]
     if pft_scheme:
         notes.insert(1, f"validated pft_type values against {pft_scheme['path']} with Koppen code {args.koppen_code}")
 

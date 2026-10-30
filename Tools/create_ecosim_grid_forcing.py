@@ -146,30 +146,56 @@ def gap_fill_soil_profile(interp, nlevs):
 
 
 def validate_grid_layers(output_file):
-    """Return problems in the soil layers EcoSIM reads (1..NJ+NL2)."""
+    """Validate supplied layers (NUI..NJ+NL1); NL2 is derived by EcoSIM."""
     problems = []
     with nc.Dataset(output_file) as ds:
-        nread = int(np.ravel(ds['NJ'][:])[0]) + int(np.ravel(ds['NL2'][:])[0])
+        if any(n not in ds.variables for n in ('NJ', 'NL1', 'NL2', 'NUI')):
+            return ['Missing soil layer selectors NJ/NL1/NL2/NUI']
+        if len(ds.dimensions.get('ntopou', [])) != 1:
+            return ['Layer validation supports one topographic unit; multiple units remain unverified']
+        nj, nl1, nl2, nui = [int(np.ravel(ds[n][:])[0]) for n in ('NJ', 'NL1', 'NL2', 'NUI')]
+        nread = nj + nl1
+        nlevs = len(ds.dimensions['nlevs'])
+        if not (1 <= nui <= nj <= nread <= nlevs) or nl1 < 0 or nl2 < 0 or nread + nl2 > nlevs:
+            return ['Invalid layer selectors: require 1 <= NUI <= NJ <= NJ+NL1 and NJ+NL1+NL2 <= nlevs']
+        if nl2 and nread < 2:
+            return ['At least two supplied layer depths are needed for deep extrapolation']
         for varname in REQUIRED_SOIL_RANGES:
             if varname not in ds.variables:
                 problems.append(f"{varname}: variable missing")
                 continue
-            values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
-            bad = [i + 1 for i, v in enumerate(values) if not in_range(varname, v)]
+            values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
+            bad = [i + nui for i, v in enumerate(values) if not in_range(varname, v)]
             if bad:
                 problems.append(f"{varname}: invalid in layers {bad}")
         if 'FC' in ds.variables and 'WP' in ds.variables:
-            fc = np.ma.filled(ds['FC'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
-            wp = np.ma.filled(ds['WP'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
-            bad = [i + 1 for i in range(nread) if fc[i] >= 0 and wp[i] >= 0 and fc[i] <= wp[i]]
+            fc = np.ma.filled(ds['FC'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
+            wp = np.ma.filled(ds['WP'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
+            bad = [i + nui for i in range(len(fc)) if fc[i] >= 0 and wp[i] >= 0 and fc[i] <= wp[i]]
             if bad:
                 problems.append(f"FC <= WP in layers {bad}")
         for varname in MODEL_ESTIMATED_IF_NEGATIVE:
-            if varname in ds.variables:
-                values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[:nread]
-                bad = [i + 1 for i, v in enumerate(values) if not np.isfinite(v)]
+            if varname not in ds.variables:
+                problems.append(f'{varname}: variable missing (use -1 explicitly for model estimation)')
+            else:
+                values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
+                bad = [i + nui for i, v in enumerate(values) if not np.isfinite(v) or v < -1]
                 if bad:
-                    problems.append(f"{varname}: non-finite in layers {bad}")
+                    problems.append(f"{varname}: invalid value or missing-data sentinel in layers {bad}")
+        def profile(name):
+            return np.ma.filled(ds[name][:].astype(float), np.nan).reshape(-1)[nui-1:nread]
+        if 'CDPTH' in ds.variables:
+            depths = profile('CDPTH')
+            if np.any(depths <= 0) or np.any(np.diff(depths) <= 0):
+                problems.append('CDPTH must be positive and strictly increasing')
+        if all(n in ds.variables for n in ('CSAND', 'CSILT')):
+            if np.any(profile('CSAND') + profile('CSILT') > 1000.01):
+                problems.append('CSAND + CSILT exceeds 1000 kg/Mg (negative implied clay)')
+        if all(n in ds.variables for n in ('FC', 'WP', 'BKDSI', 'CORGC')):
+            from Tools.soil_volume_checks import particle_density
+            porosity = 1 - profile('BKDSI') / particle_density(profile('CORGC'))
+            if np.any(profile('FC') > porosity + 1.e-6) or np.any(profile('WP') > porosity + 1.e-6):
+                problems.append('FC or WP exceeds model matrix porosity using the organic-adjusted particle density')
     return problems
 
 
@@ -477,7 +503,8 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
     sl0 = ds.createVariable('SL0', 'f4', ('ntopou',))
     sl0.long_name = "Slope"
     sl0.units = "degrees"
-    sl0[:] = [10.0]
+    sl0[:] = [site_data.get('SL0', 10.0)]
+    sl0.source = 'site_metadata' if 'SL0' in site_data else 'template_default_unverified'
 
     # Snow and surface properties (defaults)
     dpthsx = ds.createVariable('DPTHSX', 'f4', ('ntopou',))
@@ -488,7 +515,8 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
     psifc = ds.createVariable('PSIFC', 'f4', ('ntopou',))
     psifc.long_name = "Water potential at field capacity"
     psifc.units = "MPa"
-    psifc[:] = [-0.01]
+    # gSSURGO wthirdbar is water content near -0.033 MPa, not -0.01 MPa.
+    psifc[:] = [-0.033]
 
     psiwp = ds.createVariable('PSIWP', 'f4', ('ntopou',))
     psiwp.long_name = "Water potential at wilting point"
@@ -957,6 +985,19 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
     # Global attributes
     ds.description = f"Grid input data created for {site_data['site_name']} on {np.datetime64('today', 'D')}"
 
+    report['parameter_sources'] = {}
+    for name, variable in ds.variables.items():
+        if 'source' not in variable.ncattrs():
+            if name in ('ALATG', 'ALTIG', 'ATCAG', 'IETYPG', 'IXTYP1'):
+                variable.source = 'site_metadata'
+            elif soil_data and name in soil_data.get('interpolated', {}):
+                variable.source = 'soil_profile_derived; see profile sources_by_variable and gap_filled notes'
+            elif name == 'PSIFC':
+                variable.source = 'one_third_bar_pressure_convention'
+            else:
+                variable.source = 'model_default_unverified'
+        report['parameter_sources'][name] = variable.source
+
     ds.close()
     print(f"Successfully created NetCDF file: {output_file}")
     report["underived_or_fill_only_variables"] = sorted(set(report["underived_or_fill_only_variables"]))
@@ -985,6 +1026,12 @@ def main():
         print("Failed to extract site information")
         sys.exit(1)
 
+    from Tools.driving_data_conflicts import write_report
+    site_check = write_report(site_id, result_dir, site_data=site_data)
+    if site_check['status'] == 'failed':
+        print('ERROR: site metadata conflicts; see driving_data_conflicts report.', file=sys.stderr)
+        sys.exit(1)
+
     # Step 2: Load/extract soil profile data
     lon = site_data['ALONG']
     lat = site_data['ALATG']
@@ -994,6 +1041,8 @@ def main():
     report = create_grid_netcdf(site_data, soil_data, template_path, output_file)
     problems = validate_grid_layers(output_file)
     report["layer_validation_problems"] = problems
+    conflicts = write_report(site_id, result_dir, output_file, site_data)
+    report['conflict_check_status'] = conflicts['status']
 
     report_path = f"{result_dir}/{site_id}_grid_derivation_report.json"
     with open(report_path, 'w') as f:
@@ -1004,7 +1053,7 @@ def main():
         }, f, indent=2)
 
     # Print summary
-    print(f"\n✓ Grid forcing file created successfully!")
+    print(f"\nGrid NetCDF written; conflict-check status: {conflicts['status']}")
     print(f"  Output: {output_file}")
     print(f"  Site: {site_data['site_name']}")
     print(f"  Location: {lat:.4f}°N, {lon:.4f}°E")
@@ -1017,10 +1066,13 @@ def main():
     progress = update_progress(site_id, result_root)
     if progress:
         print(f"  Progress tracker: {progress}")
-    if problems:
+    if problems or conflicts['status'] == 'failed':
         print("ERROR: grid soil layers read by EcoSIM are invalid:", file=sys.stderr)
         for problem in problems:
             print(f"  {problem}", file=sys.stderr)
+        for finding in conflicts['findings']:
+            if finding['severity'] == 'error':
+                print(f"  {finding['code']}: {finding['message']}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":

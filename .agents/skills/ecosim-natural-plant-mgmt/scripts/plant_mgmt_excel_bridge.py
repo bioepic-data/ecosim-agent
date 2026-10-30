@@ -111,7 +111,7 @@ def parse_planting(value: str) -> dict[str, Any]:
     s = text_value(value)
     if not s:
         return {}
-    parts = s.split()
+    parts = [p for p in re.split(r"[\s,]+", s) if p]
     if len(parts) != 3:
         raise ValueError(f"Planting string must have 3 fields: {value!r}")
     return {

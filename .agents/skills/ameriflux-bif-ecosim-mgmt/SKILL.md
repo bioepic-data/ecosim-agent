@@ -18,13 +18,17 @@ Read `references/mapping_rules.md` when you need the exact parsing and default m
 
 ## Workflow
 
-1. Inspect the BIF workbook if needed. Prefer the `AMF-BIF` sheet.
+1. Inspect the BIF workbook if needed. Prefer the `AMF-BIF` sheet. Select the
+   requested `SITE_ID` before reconstructing or aggregating events. Pass
+   `--site-id` for network workbooks; the extractor filters rows and rejects
+   ambiguous multi-site input when no site is selected.
 2. Run the bundled extractor with the repo Python environment so it can read both XLSX and the PFT parameter NetCDF:
 
 ```bash
 .venv-cmip6/bin/python \
   .agents/skills/ameriflux-bif-ecosim-mgmt/scripts/extract_bif_mgmt_to_ecosim_excel.py \
   /path/to/AMF_SITE_BIF_YYYYMMDD.xlsx \
+  --site-id SITE \
   --pftpar-nc /path/to/ecosim_pftpar_YYYYMMDD.nc \
   --koppen-code 41 \
   --out-dir result/SITE/ecosim_mgmt_from_bif
@@ -36,6 +40,9 @@ Read `references/mapping_rules.md` when you need the exact parsing and default m
    - fertilizer N rates and product split among `NH4Soil`, `NH3Soil`, `UreaSoil`, and `NO3Soil`;
    - tillage depth/type defaults;
    - harvest defaults and `FractionCut` assumptions.
+   - duplicated product entries, partial-field/resumed operations, and irrigation
+     records omitted by the extractor. Its harvest-component defaults are zero:
+     review actual removal/export against the consuming code before use.
 4. Edit the generated plant/soil Excel workbooks if needed.
 5. Convert reviewed workbooks to NetCDF using the existing bridge skills:
 
@@ -49,6 +56,7 @@ Read `references/mapping_rules.md` when you need the exact parsing and default m
 
 ## Useful Options
 
+- `--site-id`: filter source rows to one site; a missing match is an error.
 - `--start-year` and `--end-year`: limit the output years.
 - `--pftpar-nc`: EcoSIM PFT parameter NetCDF used to validate `pft_type` against `pfts`.
 - `--koppen-code`: two-digit EcoSIM climate number used to compose `<pfts_short><koppen>`.

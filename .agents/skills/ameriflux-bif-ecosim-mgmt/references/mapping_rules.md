@@ -13,6 +13,8 @@ DATAVALUE
 ```
 
 Rows are reconstructed into records by `(SITE_ID, VARIABLE_GROUP, GROUP_ID)`.
+Filter to the requested site first. `--site-id` selects rows, not merely output
+names; without it the input must contain exactly one identifiable site.
 
 ## Plant Management
 
@@ -61,6 +63,10 @@ FractionCut  DM_SURF/100 when available; otherwise split equally across same-yea
 ```
 
 The component harvest fractions default to zero and should be reviewed against the specific crop-harvest interpretation in the EcoSIM branch. The generated rows are intended to be conversion-ready placeholders, not final biophysical truth.
+For an intended exported grain harvest, inspect both PFT fine-nonleaf removal
+and ecosystem fine-nonleaf export. The grain flag and termination flag alone
+do not establish exported biomass. Do not turn a benchmark's 0.95 export
+fraction into an unsourced default for other cases.
 
 ## Soil Management
 
@@ -98,6 +104,15 @@ DepzCorp          default --tillage-depth-m, 0.15 m
 ```
 
 Pesticide, external weather, and unresolved `GRP_DM_*` records are copied to the review workbook but are not written to EcoSIM plant or soil management tables.
+In particular, derive and review `GRP_DM_WATER` separately for irrigated sites;
+an empty generated irrigation table is not evidence of rainfed management.
+
+Check whether separate N and P rows describe one fertilizer product, whether
+resumed passes repeat the same dose, and whether `DM_SURF` or acreages imply
+partial-field coverage. Keep source group IDs and record consolidation choices.
+Use actual nutrient masses: a product's N-P2O5-K2O grade needs oxide-to-element
+conversion before elemental P input. Distinguish seed targets from measured
+stand counts, and mark unparsed rates or unknown formulations as unresolved.
 
 ## Review Requirements
 
