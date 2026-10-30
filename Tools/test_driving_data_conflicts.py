@@ -57,6 +57,34 @@ class ConflictTests(unittest.TestCase):
     def test_derived_fill_not_treated_as_supplied(self):
         self.assertEqual(validate_grid_layers(self.grid), [])
 
+    def test_aspect_needs_source_independent_of_slope(self):
+        self.assertIn('aspect_unverified', self.codes())
+        with nc.Dataset(self.grid, 'a') as ds:
+            v = ds.createVariable('ASPX', 'f8', ('ntopou',))
+            v[:] = 90
+        self.assertIn('aspect_unverified', self.codes())
+        with nc.Dataset(self.grid, 'a') as ds:
+            ds['ASPX'].source = 'template_default_unverified'
+        self.assertIn('aspect_unverified', self.codes())
+        with nc.Dataset(self.grid, 'a') as ds:
+            ds['ASPX'].source = 'site_metadata'
+        self.assertIn('aspect_unverified', self.codes())
+        with nc.Dataset(self.grid, 'a') as ds:
+            ds['ASPX'].source = 'Field survey, plot A, survey-log.csv; downslope azimuth'
+        # This only checks recorded provenance, not the truth of that survey.
+        self.assertNotIn('aspect_unverified', self.codes())
+
+    def test_aspect_out_of_range_is_invalid_even_with_source(self):
+        with nc.Dataset(self.grid, 'a') as ds:
+            v = ds.createVariable('ASPX', 'f8', ('ntopou',))
+            v.source = 'Field survey, plot A'
+        for value in (-1, 361, float('nan')):
+            with self.subTest(value=value):
+                self.edit('ASPX', 0, value)
+                report = write_report(SITE, self.directory, self.grid)
+                self.assertIn('aspect_range', {f['code'] for f in report['findings']})
+                self.assertEqual(report['status'], 'failed')
+
     def test_nl1_layer_is_checked(self):
         self.edit('BKDSI', (0, 2), -999.9)
         self.assertTrue(any('BKDSI' in p for p in validate_grid_layers(self.grid)))

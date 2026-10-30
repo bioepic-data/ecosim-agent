@@ -63,6 +63,13 @@ not an automatic substitute for missing observations.
 
 ## Common Overrides
 
+Before a full run intended for comparison with observations, use
+[`ecosim-evaluation-output-check`](../ecosim-evaluation-output-check/SKILL.md)
+to verify the required history fields in an isolated one-year run and carry the
+reviewed output selections into the production namelist. Keep missing mappings
+visible. This output check complements the required two-year plant-trait smoke
+test; it does not replace it or establish scientific model performance.
+
 - Use `--case-name` for a model case label different from the site ID.
 - Use `--grid-file`, `--pft-mgmt-file`, and `--climate-file` when auto-discovery chooses the wrong artifact.
 - Use `--force-start-year`, `--spinup-end-year`, `--force-end-year`, `--spinup-cycles`, `--start-year`, and `--stop-n` to control chronology.

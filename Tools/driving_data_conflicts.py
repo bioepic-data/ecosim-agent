@@ -27,12 +27,19 @@ def explain_findings(findings, volume_audit=None):
         code = finding['code']
         row = layers.get(finding.get('layer'))
         evidence = {k: finding[k] for k in ('source', 'actual', 'expected', 'minimum', 'maximum',
-                                           'missing_years', 'tolerance', 'uppermost_or_scalar_values') if k in finding}
+                                           'missing_years', 'tolerance', 'uppermost_or_scalar_values',
+                                           'parameter_source') if k in finding}
         kind = 'invalid_input' if finding['severity'] == 'error' else 'unverified_evidence'
         explanation = finding['message']
         consequence = ('This input cannot be accepted for the checked preparation scope.' if finding['severity'] == 'error'
                        else 'The available checks do not establish site-specific correctness.')
         resolution = 'Review the cited evidence, document the resolution and rerun the assessment.'
+        if code == 'aspect_unverified':
+            consequence = ('Aspect affects radiation geometry, terrain gradients and directional runoff; '
+                           'a valid angle or matching runoff boundary does not establish the field direction.')
+            resolution = ('Review site BIF, field survey, literature or a site-scale DEM. Record the actual '
+                          'source and spatial support in ASPX.source, retain uncertainty, and review runoff '
+                          'boundaries together. Gentle-slope text does not supply an aspect.')
         if row:
             evidence.update(row)
         if code == 'density_volume_basis_conflict' and row:
@@ -244,6 +251,20 @@ def assess(site_id, input_dir, grid=None, site_data=None, namelist=None):
                             constraint['source'], actual=actual, minimum=low, maximum=high)
             if not any(c['variable'] == 'SL0' for c in constraints):
                 finding('warning', 'slope_unverified', 'No sourced terrain constraint; grid slope remains unverified.', grid)
+            if 'ASPX' not in ds.variables:
+                finding('warning', 'aspect_unverified', 'Grid aspect is absent; site orientation remains unverified.', grid)
+            else:
+                aspect = scalar('ASPX')
+                aspect_evidence = aspect if math.isfinite(aspect) else str(aspect)
+                source = str(getattr(ds['ASPX'], 'source', '')).strip()
+                if not math.isfinite(aspect) or not 0 <= aspect <= 360:
+                    finding('error', 'aspect_range', 'ASPX must be finite compass degrees in [0, 360].',
+                            grid, actual=aspect_evidence)
+                if (not source or source.lower() == 'site_metadata' or
+                        any(word in source.lower() for word in ('default', 'template', 'unverified', 'unknown'))):
+                    finding('warning', 'aspect_unverified',
+                            'ASPX has missing or provisional provenance; do not treat the angle as field evidence.',
+                            grid, actual=aspect_evidence, parameter_source=source or 'not recorded')
             profile = read(f'profile_{site_id}_source.json') or read(f'profile_{site_id}.json') or {}
             from Tools.soil_volume_checks import audit_soil_volumes, CONSTANTS
             volume_audit = audit_soil_volumes(ds, profile)

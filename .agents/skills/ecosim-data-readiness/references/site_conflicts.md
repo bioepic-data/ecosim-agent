@@ -5,6 +5,11 @@ not establish that it belongs to the site.
 
 Before extracting or converting inputs:
 
+- For slope/aspect and inherited terrain/boundary values, read
+  [terrain_evidence.md](terrain_evidence.md). Check the source and spatial
+  support explicitly; slope bounds, template angles and matching runoff flags
+  do not independently establish site aspect.
+
 - Confirm site ID, signed coordinates, elevation, vegetation, climate class and
   source version. Recheck cached metadata against original extraction/sign
   evidence and site-filtered BIF records. Nearby sites and meteorological
@@ -93,6 +98,12 @@ benchmark, or label unperformed checks as passed. Refresh NetCDF, editable
 workbooks, reports and the site guide together when changing values.
 
 ## Explain the findings
+
+For texture and organic-carbon comparisons or corrections, follow
+[`field_soil_evidence.md`](../../ameriflux-surgo-grid-extract/references/field_soil_evidence.md).
+It covers grouped BIF records, missing depths, mineral texture versus runtime
+fractions, SOC/OM conversions, stock support and boundary-layer effects. These
+checks require a numerical evidence review beyond the shared offline validator.
 
 Report what conflict the given inputs produce, not just that a validator failed.
 Group layer/date instances sharing a root cause; distinguish root-issue counts

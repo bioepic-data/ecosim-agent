@@ -36,6 +36,12 @@ When preparing driving data, read [references/site_conflicts.md](references/site
 Check site evidence before extraction and again against generated inputs; record
 contradictions, defaults and unavailable evidence separately from format validity.
 
+For soil texture or organic carbon, use the
+[field-soil evidence review](../ameriflux-surgo-grid-extract/references/field_soil_evidence.md).
+Site BIF records may supply measurements absent from map products, but missing
+depths and conflicting stock estimates remain unresolved until their support
+and units are established. Passing the offline conflict tool is not this review.
+
 Determine requirements from the user's task, selected site and period, relevant
 workflow skill, configuration/namelist, and consuming reader or template. Check
 only dependencies of that workflow: for example, output analysis may require

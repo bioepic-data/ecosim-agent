@@ -290,6 +290,14 @@ conflict status and chronology from files on disk. Keep historical benchmark
 comparisons labeled as snapshots. A documentation update does not authorize
 changing input values to make a conflict disappear.
 
+For field/BIF texture or organic-carbon overrides, also follow
+[`field_soil_evidence.md`](../../ameriflux-surgo-grid-extract/references/field_soil_evidence.md).
+Show the source record and missing metadata, the intended observation interval
+versus full changed layer support, and achieved stock where applicable. Refresh
+dependent porosity/water calculations as well as concentration tables. Preserve
+prior run results as historical and record that fresh initialization/spin-up
+verification is pending; earlier outputs do not validate the revised grid.
+
 Use inline CSS, semantic headings, readable tables, and a responsive layout so
 the page works offline without remote scripts or fonts. Add simple explanatory
 graphics where useful, labeling schematics and derived quantities. Verify local
@@ -298,6 +306,15 @@ refresh case status after validation or a requested simulation changes it.
 Preserve existing user-authored content when updating a guide.
 
 ## Smoke Run and Plant-Trait Evaluation
+
+For a case intended for model-data comparison, also follow
+[`ecosim-evaluation-output-check`](../../ecosim-evaluation-output-check/SKILL.md).
+Inventory the actual observations, request the matching registered fields and
+support variables, and verify them with a separate one-year run before committing
+to a full simulation. Carry the validated history selections into the production
+namelist without changing its chronology. Report output readiness separately
+from the two-year smoke/trait verdict and from scientific evaluation; do not
+silently omit observed targets that still lack a compatible model output.
 
 After the run folder is created, always run a 2-year smoke run and evaluate the
 plant traits it writes, before starting the full simulation:

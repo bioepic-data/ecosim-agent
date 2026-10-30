@@ -1,6 +1,6 @@
 ---
 name: ameriflux-surgo-grid-extract
-description: Extract dominant-component soil profile variables for EcoSIM grid or template inputs from gSSURGO, with FAO HWSD v2.0 fallback when gSSURGO data are unavailable or incomplete. Use when deriving soil depth, bulk density, field capacity, wilting point, hydraulic conductivity, texture, rock fraction, pH, CEC, or soil organic carbon; or when converting EcoSIM grid NetCDF files to editable Excel workbooks and back.
+description: Extract soil profiles for EcoSIM from gSSURGO or FAO HWSD2, compare texture/carbon with site BIF and field evidence, and apply documented grid corrections. Use when deriving soil depth, bulk density, field capacity, wilting point, hydraulic conductivity, texture, rock fraction, pH, CEC, or soil organic carbon; or when converting EcoSIM grid NetCDF files to editable Excel workbooks and back.
 ---
 
 # AmeriFlux gSSURGO/FAO Grid Extractor
@@ -28,6 +28,10 @@ Before deriving a grid, follow the site-evidence review in
 `Tools/driving_data_conflicts.py` against the selected site/grid after generation
 or edits. Review terrain, FC pressure basis, layer selection, and hydrologic /
 chemical priors; range checks alone do not establish site consistency.
+For slope/aspect and directional boundaries, use the
+[terrain-evidence review](../ecosim-data-readiness/references/terrain_evidence.md).
+Audit inherited/default values against site sources before accepting them;
+gSSURGO extraction does not determine field aspect.
 Explain each reported issue with the actual source/grid values, units and depth
 support, the violated relationship, its physical consequence, and the required
 reconciliation. Include reproducible equations, at least one worked substitution,
@@ -37,6 +41,13 @@ For a site run folder, refresh its HTML grid documentation using the checklist
 in `../ameriflux-namelist-generator/references/runfolder_workflow.md` under
 "Document the selected grid". Include actual layer values, provenance and
 conflict status, rather than only describing the soil series.
+
+For soil texture or organic carbon, review site-filtered BIF and field/literature
+evidence before accepting mapped values. Follow
+[references/field_soil_evidence.md](references/field_soil_evidence.md) for source
+selection, missing sampling depths, concentration-to-stock comparisons and
+authorized corrections. Mapping success does not establish field agreement;
+the offline conflict tool does not perform this numerical evidence review.
 
 1. Locate `gSSURGO_CONUS.gdb` under `data/` first, then elsewhere in the repo if needed.
 2. Identify the map unit (`MUKEY`) by spatial query on `MUPOLYGON`.
