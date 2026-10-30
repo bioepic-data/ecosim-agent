@@ -5,6 +5,7 @@ This repository contains Python utilities and Agent Skills for preparing EcoSIM 
 ## Main Entry Points
 
 - Agent Skills: [`.agents/skills/*/SKILL.md`](.agents/skills)
+- Namelist-driven climate readiness: [`.agents/skills/ecosim-climate-readiness/SKILL.md`](.agents/skills/ecosim-climate-readiness/SKILL.md)
 - Climate forcing orchestration: [`Tools/create_ecosim_climate_forcing.py`](Tools/create_ecosim_climate_forcing.py)
 - ERA5 to EcoSIM converter: [`.agents/skills/ameriflux-era5-to-ecosim/era5_to_ecosim_converter.py`](.agents/skills/ameriflux-era5-to-ecosim/era5_to_ecosim_converter.py)
 - Notebook helper scripts: [`applications/notebooks/scripts/`](applications/notebooks/scripts)

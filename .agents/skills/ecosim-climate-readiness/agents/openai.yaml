@@ -1,0 +1,4 @@
+interface:
+  display_name: "EcoSIM Climate Readiness"
+  short_description: "Validate run climate forcing from an EcoSIM namelist"
+  default_prompt: "Use $ecosim-climate-readiness to check the climate forcing selected by this run namelist before simulation."
