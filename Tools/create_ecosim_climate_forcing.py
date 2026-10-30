@@ -15,6 +15,7 @@ import json
 import shutil
 import subprocess
 import argparse
+from pathlib import Path
 from datetime import datetime
 import pandas as pd
 from netCDF4 import Dataset
@@ -347,6 +348,15 @@ def main():
     if not site_data:
         print("Failed to extract site information", file=sys.stderr)
         sys.exit(1)
+
+    from Tools.driving_data_conflicts import write_report
+    site_check = write_report(site_id, result_dir, site_data=site_data,
+                              output=Path(result_dir) / f'{site_id}_site_information_check.json')
+    if site_check['status'] == 'failed':
+        print('ERROR: site information conflicts; see site_information_check report.', file=sys.stderr)
+        sys.exit(1)
+    if site_check['status'] == 'warning':
+        print('WARNING: some site evidence remains unverified; see site_information_check report.', file=sys.stderr)
 
     lat = site_data['ALATG']
     lon = site_data['ALONG']

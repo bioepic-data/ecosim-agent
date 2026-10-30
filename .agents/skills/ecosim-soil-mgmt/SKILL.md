@@ -28,6 +28,15 @@ Read `references/soil_mgmt_contract.md` when you need exact NetCDF dimensions, E
 6. Fertilizer quantities are read as `g m-2`. Convert annual or field-rate values before writing: `1 g m-2 = 10 kg ha-1`.
 7. Use actual calendar years in `DDMMYYYY` for year-specific schedules. The Fortran reader uses the year embedded in the event string for leap-year day-of-year conversion.
 8. After conversion, inspect the new file and check date-year mismatches, missing selector targets, nonzero nutrient totals, and whether expected tillage/irrigation events are present.
+9. Before accepting generated files or Excel roundtrips, perform the raw-byte
+   selector check in `references/soil_mgmt_contract.md` under "Fixed-width
+   string compatibility". Test every year/topographic unit, including default
+   `NO` and short active names. Decoded string equality alone is insufficient.
+10. Evaluate against the consuming branch's `ReadManagementMod.F90`,
+   `FertilizerMod.F90`, and `DayMod.F90`. Check irrigation-borne nutrients,
+   same-day properties, daily-slot overwrites, and tillage mixing using the
+   contract below. The bridge's `inspect` command currently summarizes fertilizer
+   tables; it is not a complete irrigation or process-semantics validator.
 
 ## Conversion Commands
 
@@ -57,3 +66,10 @@ For fertilizer-only files, verify that:
 - Annual N and P totals are plausible for the site and management intensity.
 
 For tillage and irrigation files, also verify row counts do not exceed reader limits: fertilizer `<=12`, scheduled irrigation `<=24`, and tillage `<=367`.
+
+Check every configured forcing year and selector, not just the first/last year.
+Keep source schedules and record provenance when merging. Carry missing years
+forward only when authorized, rebase event dates to the target year, and label
+the originating year and assumptions. Recompute water and nutrient totals after
+NetCDF readback and Excel roundtrips. See the contract's process checks for the
+specific equations and reader limitations.

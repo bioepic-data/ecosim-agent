@@ -232,7 +232,11 @@ def decode_chars(var: nc.Variable) -> np.ndarray:
 
 
 def write_fixed_strlen(var: nc.Variable, data: np.ndarray, strlen: int) -> None:
-    arr = np.asarray(data, dtype=f"S{strlen}")
+    # Fortran TRIM removes spaces, not NULs. In particular, NO must compare
+    # equal to the inactive selector rather than become a variable name.
+    values = np.asarray(data)
+    padded = [pad_string(value, strlen) for value in values.reshape(-1)]
+    arr = np.asarray(padded, dtype=f"S{strlen}").reshape(values.shape)
     var[:] = arr.view("S1").reshape(arr.shape + (strlen,))
 
 

@@ -13,6 +13,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import create_site_run_folder as run_folder
+from Tools.test_driving_data_conflicts import write_grid, write_site
 
 SITE = "US-Tst"
 
@@ -36,8 +37,11 @@ class RunFolderTests(unittest.TestCase):
         for name in ("ecosim_pftpar_20260915.nc", "fatm_hist_GHGs_1750-2025.nc", "MicrobePars.20260211.nc"):
             Path(self.shared, name).write_bytes(b"x")
         write_climate(self.site_root / f"{SITE}_ecosim_climate.nc", 1981, 2021)
-        for name in (f"{SITE}_ecosim_grid.nc", f"{SITE}_pft_mgmt.nc", f"{SITE}_pft_mgmt.xlsx",
-                     f"{SITE}_ecosim_site.json", f"{SITE}_era5_quality_report.json"):
+        write_grid(self.site_root / f'{SITE}_ecosim_grid.nc')
+        write_site(self.site_root, SITE)
+        write_climate(self.site_root / f'{SITE}_pft_mgmt.nc', 1981, 2021)
+        for name in (f"{SITE}_pft_mgmt.xlsx",
+                     f"{SITE}_era5_quality_report.json"):
             Path(self.site_root, name).write_bytes(b"x")
 
     def tearDown(self):
@@ -92,6 +96,17 @@ class RunFolderTests(unittest.TestCase):
             self.assertTrue(value.startswith("../input/"), (field, value))
         self.assertIn("soil_mgmt_in='NO'", text)
 
+    def test_site_guide_and_relative_links_survive_reassembly(self):
+        guide = self.site_root / f"{SITE}.html"
+        content = f'<a href="input/{SITE}_ecosim_grid.nc">Soil input</a>'
+        guide.write_text(content)
+        for _ in range(2):
+            status, _ = self.run_folder()
+            self.assertEqual(status, 0)
+            self.assertEqual(guide.read_text(), content)
+            self.assertTrue((guide.parent / "input" / f"{SITE}_ecosim_grid.nc").exists())
+            self.assertFalse((self.site_root / "input" / guide.name).exists())
+
     def test_default_chronology_covers_spinup(self):
         self.run_folder()
         text = self.namelist()
@@ -100,7 +115,7 @@ class RunFolderTests(unittest.TestCase):
         self.assertRegex(text, r"stop_n=\s*113\b")
 
     def test_soil_management_is_wired_when_present(self):
-        Path(self.site_root, f"{SITE}_soil_mgmt.nc").write_bytes(b"x")
+        write_climate(self.site_root / f'{SITE}_soil_mgmt.nc', 1981, 2021)
         self.run_folder()
         self.assertIn(f"soil_mgmt_in='../input/{SITE}_soil_mgmt.nc'", self.namelist())
 
@@ -132,6 +147,15 @@ class RunFolderTests(unittest.TestCase):
         status, _ = self.run_folder()
         self.assertEqual(status, 0)
         self.assertEqual(self.namelist(), first)
+
+    def test_conflict_blocks_assembly_before_namelist(self):
+        from netCDF4 import Dataset
+        with Dataset(self.site_root / f'{SITE}_ecosim_grid.nc', 'a') as ds:
+            ds['ALATG'][:] = -45
+        status, stderr = self.run_folder()
+        self.assertEqual(status, 1)
+        self.assertIn('driving-data conflicts', stderr)
+        self.assertFalse((self.site_root / 'run_dir' / f'{SITE}.namelist').exists())
 
 
 if __name__ == "__main__":

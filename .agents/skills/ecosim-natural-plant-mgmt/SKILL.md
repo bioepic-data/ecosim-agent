@@ -87,6 +87,19 @@ component_pool * pft_harvest_fraction * (1 - ecosystem_harvest_fraction)
 
 For transient yearly schedules, prefer actual calendar years in `DDMMYYYY` if exact day-of-year alignment matters. The selected `PlantInfoMod.F90` treats year `0000` as a leap year when converting dates to ordinal day.
 
+## Crop harvest and legacy files
+
+For managed crops, check the consuming branch's `PlantDisturbsMod.F90` as well
+as the reader. A grain-harvest flag with zero PFT removal or zero ecosystem
+fine-nonleaf export does not encode intended grain export. Check these fractions
+separately from termination, cutting height, and population fraction. Record
+any benchmark convention adopted; 0.95 grain export is not a universal default.
+
+The bridge accepts comma-separated, whitespace-separated, and mixed planting
+strings, matching Fortran list-directed input. Preserve dates and values during
+normalization and verify NetCDF readback. Validate legacy crop identifiers
+against the active catalog and grid climate before migrating them.
+
 ## Validation
 
 Run the bridge round trip on a scratch path and inspect the decoded JSON:
@@ -96,5 +109,13 @@ Run the bridge round trip on a scratch path and inspect the decoded JSON:
 .venv-cmip6/bin/python .agents/skills/ecosim-natural-plant-mgmt/scripts/plant_mgmt_excel_bridge.py nc-to-xlsx input.nc /tmp/pft-mgmt.xlsx
 .venv-cmip6/bin/python .agents/skills/ecosim-natural-plant-mgmt/scripts/plant_mgmt_excel_bridge.py xlsx-to-nc /tmp/pft-mgmt.xlsx /tmp/pft-mgmt-roundtrip.nc --json-output /tmp/pft-mgmt-roundtrip.json
 ```
+
+For fixed-width character fields, inspect raw bytes with automatic masking
+disabled in addition to decoded JSON. Populate active PFT names, planting
+strings and management rows with space padding compatible with Fortran; verify
+only the slots/events selected by NZ and nmgnts when auditing an existing file.
+Unused fill slots are not active management errors. Refer to
+`../ecosim-soil-mgmt/references/soil_mgmt_contract.md` under "Fixed-width string
+compatibility" for the NUL-padding failure mechanism and repair validation.
 
 Verify that `pft_dflag`, `year`, `NH1/NV1/NH2/NV2/NZ`, `pft_type`, `pft_pltinfo`, `nmgnts`, and `pft_mgmt` exist; `NZ` equals active PFT count; `nmgnts` equals populated management rows; non-tree PFTs have zero management events unless explicitly managed; tree PFTs have 12 thinning events when using the natural-tree convention.

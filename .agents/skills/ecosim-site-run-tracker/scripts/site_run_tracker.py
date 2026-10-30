@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import re
 import sys
 from datetime import datetime, timezone
@@ -218,8 +219,24 @@ def scan_soil_grid(site: Site) -> Result:
         detail += "; manual edits recorded"
     if problems:
         return "failed", f"{detail}; invalid layers: {'; '.join(problems)}", evidence
+    conflict_path = site.find(f'{site.id}_driving_data_conflicts.json')
+    conflicts = site.read_json(f'{site.id}_driving_data_conflicts.json') or {}
+    if conflict_path:
+        evidence.append(str(conflict_path))
+    hashes = conflicts.get('input_sha256') or {}
+    grid_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    recorded_hash = hashes.get(str(path.resolve()))
+    fresh = recorded_hash == grid_hash and all(
+        Path(p).exists() and hashlib.sha256(Path(p).read_bytes()).hexdigest() == h
+        for p, h in hashes.items())
+    if conflicts.get('status') == 'failed':
+        return 'failed', f'{detail}; unresolved driving-data conflicts (rerun checks after corrections)', evidence
+    if not fresh or conflicts.get('status') not in ('passed', 'warning'):
+        return 'warning', f'{detail}; site conflict assessment missing or stale', evidence
+    if conflicts.get('status') == 'warning':
+        return 'warning', f'{detail}; site evidence / model priors need review', evidence
     if problems is None:
-        return "done", f"{detail} (layer validation unavailable)", evidence
+        return "warning", f"{detail} (layer validation unavailable)", evidence
     return "done", f"{detail}; soil layers valid", evidence
 
 
@@ -485,6 +502,11 @@ def scan(site: Site, state: Dict[str, Any]) -> Dict[str, Any]:
             if step.get("source") == "manual":
                 # Keep the manual status, but show what the files currently say.
                 step.update({"auto_status": status, "detail": detail, "evidence": evidence})
+                if name == 'soil_grid':
+                    # A historical manual approval must not hide a new conflict
+                    # or an unverified/stale site-evidence assessment.
+                    step.setdefault('manual_status', step['status'])
+                    step['status'] = status if status in ('failed', 'warning') else step['manual_status']
                 continue
             if (status, detail) != (step["status"], step["detail"]):
                 step["updated"] = now()

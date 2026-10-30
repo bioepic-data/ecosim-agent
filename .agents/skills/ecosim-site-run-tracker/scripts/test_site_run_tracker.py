@@ -84,7 +84,8 @@ class TrackerTests(unittest.TestCase):
         # NLDAS/CDS forcing has no ERA5 quality report; its absence is noted, not a warning.
         self.assertEqual(self.step("climate_forcing")["status"], "done")
         self.assertIn("no ERA5 quality report", self.step("climate_forcing")["detail"])
-        self.assertEqual(self.step("soil_grid")["status"], "done")
+        self.assertEqual(self.step("soil_grid")["status"], "warning")
+        self.assertIn('assessment missing or stale', self.step('soil_grid')['detail'])
         self.assertEqual(self.step("namelist")["status"], "done")
         self.assertEqual(self.step("chronology")["status"], "done")
         self.assertIn("1909-2021", self.step("chronology")["detail"])
@@ -94,6 +95,16 @@ class TrackerTests(unittest.TestCase):
         self.run_cli("init")
         self.assertEqual(self.step("chronology")["status"], "warning")
         self.assertIn("113", self.step("chronology")["detail"])
+
+    def test_manual_grid_approval_cannot_hide_new_conflict(self):
+        self.build_run_folder()
+        self.run_cli('init')
+        self.run_cli('set', '--step', 'soil_grid', '--status', 'done', '--note', 'Earlier review')
+        report = self.site / 'input' / f'{SITE}_driving_data_conflicts.json'
+        report.write_text(json.dumps({'status': 'failed', 'input_sha256': {}}))
+        self.run_cli('scan')
+        self.assertEqual(self.step('soil_grid')['status'], 'failed')
+        self.assertEqual(self.step('soil_grid')['note'], 'Earlier review')
 
     def test_missing_namelist_input_fails(self):
         self.build_run_folder()

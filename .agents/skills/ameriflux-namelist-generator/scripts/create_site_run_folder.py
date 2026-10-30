@@ -4,12 +4,14 @@
 Layout:
 
     result/<SITE_ID>/
+        <SITE_ID>.html  site guide, authored by the agent and preserved on reruns
         input/     all site artifacts (grid, climate, plant/soil management
                    NetCDF, Excel and JSON sidecars, metadata, reports) plus
                    copies of the PFT parameter, GHG, and microbial parameter files
         run_dir/   <SITE_ID>.namelist, with input paths relative to run_dir
 
-Site artifacts generated directly in result/<SITE_ID>/ are moved into input/.
+Input artifacts generated directly in result/<SITE_ID>/ are moved into input/.
+The site HTML guide and progress-tracker files remain at the site root.
 The namelist is written by create_ameriflux_namelist.py.
 """
 
@@ -64,10 +66,11 @@ def default_static_file(repo_root: Path, pattern: str) -> Optional[Path]:
 
 
 def collect_site_artifacts(site_root: Path, input_dir: Path) -> list[str]:
-    """Move files generated directly in result/<SITE_ID>/ into input/."""
+    """Move input artifacts into input/, preserving the site guide and tracker."""
     moved = []
     for path in sorted(site_root.iterdir()):
-        if not path.is_file() or path.name.startswith(".") or path.name in TRACKER_FILES:
+        if (not path.is_file() or path.name.startswith(".")
+                or path.name in TRACKER_FILES or path.name == f"{site_root.name}.html"):
             continue
         target = input_dir / path.name
         if target.exists():
@@ -215,6 +218,15 @@ def assemble(argv: Optional[list[str]] = None) -> int:
         print(f"ERROR: missing required inputs in {input_dir}: {', '.join(missing)}", file=sys.stderr)
         return 2
 
+    from Tools.driving_data_conflicts import write_report
+    conflicts = write_report(site, input_dir, site_files['grid_file_in'])
+    if conflicts['status'] == 'failed':
+        print('ERROR: driving-data conflicts; see input/' + site + '_driving_data_conflicts.json', file=sys.stderr)
+        update_progress(site, site_root.parent)
+        return 1
+    if conflicts['status'] == 'warning':
+        print('WARNING: site evidence or model priors need review; see driving_data_conflicts report.', file=sys.stderr)
+
     namelist_file = run_dir / f"{site}.namelist"
     generator_args = [
         "--site-id", site,
@@ -242,6 +254,12 @@ def assemble(argv: Optional[list[str]] = None) -> int:
     status = namelist_generator.main(generator_args)
     if status != 0:
         return status
+
+    conflicts = write_report(site, input_dir, site_files['grid_file_in'], namelist=namelist_file)
+    if conflicts['status'] == 'failed':
+        print('ERROR: forcing coverage or chronology conflicts; see driving_data_conflicts report.', file=sys.stderr)
+        update_progress(site, site_root.parent)
+        return 1
 
     problems = check_namelist_paths(namelist_file)
     extra = [path.name for path in run_dir.iterdir() if path.name != namelist_file.name]

@@ -1,6 +1,6 @@
 ---
 name: ecosim-multisite-project
-description: Sort EcoSIM run folders for a set of sites into one project directory with input/<SITE_ID>/ and run_dir/<SITE_ID>/ subdirectories and a project manifest. Use when asked to create EcoSIM run folders, runs, or cases for several sites at once ("create ecosim run folders for US-UMB, US-xGR, and US-Ha1", "set up a multi-site EcoSIM project"), or to add, refresh, or summarize sites in such a project.
+description: Sort EcoSIM run folders for several sites into a project with per-site input and run directories, sourced site guides, and a project manifest. Use when asked to create EcoSIM run folders, runs, or cases for several sites at once, set up a multi-site EcoSIM project, or add, refresh, or summarize sites in such a project.
 ---
 
 # EcoSIM Multi-Site Project
@@ -32,7 +32,9 @@ site-corrected PFT parameter copy, GHG, and microbial files. Backups
 2. Prepare every site with the single-site workflow
    (`ameriflux-namelist-generator` `references/runfolder_workflow.md`), each in
    `result/<SITE_ID>/` with its own progress tracker: data preparation, run
-   folder, 2-year smoke run, and plant-trait correction. Sites are independent;
+   folder, 2-year smoke run, plant-trait correction, and a sourced
+   `<SITE_ID>.html` guide at the site's root. Follow the single-site workflow's
+   Site Explanation HTML step and keep each guide's case status current. Sites are independent;
    report per-site problems instead of stopping the whole project.
 3. Assemble the project:
 
@@ -48,7 +50,8 @@ site-corrected PFT parameter copy, GHG, and microbial files. Backups
    `PROJECT.md`. It exits nonzero if any site was skipped or has path problems.
 4. Report from `PROJECT.md`: one row per site with PFTs, chronology, climate
    years, stage status, smoke run, and trait findings, plus the sites left out
-   and why.
+   and why. Include links to the canonical site HTML guides in the completion
+   report; the project assembler copies inputs and namelists, not site-root guides.
 5. To add sites or pick up changes, fix them in `result/<SITE_ID>/` and rerun
    the script with those sites; other sites in the manifest are kept. Model
    output already in a project run directory is kept unless `--replace-runs`.

@@ -37,6 +37,11 @@ Always inspect the extracted values for physical and ecological plausibility bef
 
 ## Location Cross-Checks
 
+Before using metadata for driving-data preparation, also follow
+`../ecosim-data-readiness/references/site_conflicts.md`: reconcile site-filtered
+field records and terrain/history with cached metadata and generated inputs.
+Location/sign checks alone do not validate soil, terrain or management defaults.
+
 AmeriFlux pages put each value on its own line under a label (`Lat, Long:` then `-16.4980, -56.4120`). Line cleanup must never strip a leading minus sign: an earlier version did, turning southern latitudes (BR-Npw, CL-SDF), sub-zero MAT (US-Brw -12.6, US-Prr -2), and below-sea-level elevation (US-Myb -4) positive. Every extraction is now cross-checked, and the result is stored in `_location_validation`:
 
 | Check | Evidence | On failure |

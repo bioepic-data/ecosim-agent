@@ -4,11 +4,18 @@ Use this workflow whenever a user asks to create a workable EcoSIM run folder, r
 
 ## Goal
 
+Before preparing driving data, follow
+`../../ecosim-data-readiness/references/site_conflicts.md` to reconcile site
+metadata, field records, source units and template assumptions. Assembly runs
+`Tools/driving_data_conflicts.py`, writes the site conflict report, and stops on
+errors. Warnings remain visible and do not establish full scientific readiness.
+
 Produce a run directory that contains or can resolve:
 
 - an EcoSIM executable or symlink if the user wants it placed in the folder
 - a site-specific `.namelist`
 - reachable grid, climate, plant-management, PFT parameter, and greenhouse-gas NetCDF inputs
+- a sourced `<SITE_ID>.html` site guide at the site-folder root
 - optional output/log subdirectories
 
 ## Progress Tracking
@@ -31,6 +38,9 @@ stage status from `result/<SITE_ID>/PROGRESS.md` when finishing or when asked.
 7. Use `ecosim-soil-mgmt` to create editable soil-management Excel, JSON, and NetCDF files when fertilizer, tillage, irrigation, or other soil management is active.
 8. Use `ameriflux-namelist-generator` (`scripts/create_site_run_folder.py`) to assemble `result/<SITE_ID>/input/` and `result/<SITE_ID>/run_dir/` and write the namelist.
 9. Immediately run the 2-year smoke run and plant-trait evaluation (`scripts/create_site_smoke_run.py`; see Smoke Run and Plant-Trait Evaluation) before any full simulation.
+10. Create or refresh the site HTML guide using the Site Explanation HTML step
+    below. If simulation is blocked, still create the guide and record the
+    blocker and checks actually performed.
 
 ## Expected Artifacts
 
@@ -49,6 +59,7 @@ result/<SITE_ID>/<SITE_ID>_soil_mgmt.json
 result/<SITE_ID>/<SITE_ID>_soil_mgmt.nc
 result/<SITE_ID>/<SITE_ID>_climate_derivation_report.json
 result/<SITE_ID>/<SITE_ID>_grid_derivation_report.json
+result/<SITE_ID>/<SITE_ID>.html                 # Remains at the site root
 ```
 
 Use existing artifacts if they are current and plausible. Do not regenerate large inputs unless requested or clearly required.
@@ -83,11 +94,13 @@ Before declaring a run folder workable, make sure the user has downloaded or pro
 ## Run Folder Layout
 
 Unless the user names another location, create the run folder under the
-python-tools `result/` directory, one folder per site, with exactly two
-subfolders. For US-UMB:
+python-tools `result/` directory, one folder per site, with `input/` and
+`run_dir/` as the core subfolders. Honor a user-specified destination such as
+`work-space/<SITE_ID>/`. For US-UMB:
 
 ```text
 result/US-UMB/
+  US-UMB.html site explanation, sources, assumptions, and case status
   input/      all site inputs and sidecars: *_ecosim_grid.nc, *_ecosim_climate_<first>-<last>.nc,
               *_pft_mgmt.nc (and *_soil_mgmt.nc when active), Excel/JSON sidecars,
               *_ecosim_site.json, derivation and quality reports, logs, plus copies
@@ -96,8 +109,8 @@ result/US-UMB/
 ```
 
 The extraction skills write their artifacts directly into `result/<SITE_ID>/`.
-Assembling the run folder moves those files into `input/`, so nothing is left
-loose in `result/<SITE_ID>/`. Copying the shared parameter files makes the
+Assembling the run folder moves input artifacts into `input/`. The site HTML
+guide and tracker files remain at the site root. Copying the shared parameter files makes the
 folder self-contained and pins the parameter versions used by the case.
 
 Do not create `output/` or other files in `run_dir/`; EcoSIM writes its output
@@ -114,6 +127,54 @@ skill: `result/projects/<PROJECT>/input/<SITE_ID>/` and
 
 ## Run Folder Creation
 
+Before assembly, apply the following management coverage and evaluation checks
+when preparing annual schedules or merging cases.
+
+### Management Coverage and Code Evaluation
+
+Determine the simulation and forcing years from `start_date`, `forc_periods`,
+and the consuming branch's year-selection settings. Enumerate required years in
+both plant and soil management; first/last year ranges can hide gaps. Check that
+`stop_n` agrees with the intended forcing-plan length, documenting any deliberate
+override. Benchmark files may represent different years or model versions.
+
+When merging sources, inspect the files actually selected by each namelist,
+preserve originals, and retain per-year/event provenance and source hashes.
+Resolve overlap using the user's source preference or documented evidence;
+do not silently concatenate duplicate events. Validate legacy crop identifiers
+against the active catalog and grid climate, and normalize legacy delimiters
+without changing numerical values.
+
+Carry schedules into missing years only when the user authorizes that policy.
+Copy the preceding selected year's schedule, rebase planting/harvest and soil
+event dates to each target year, and retain both the immediate donor and ultimate
+source year. Mark synthetic years in provenance and the HTML. Handle leap-day
+events explicitly; do not silently retain an invalid date or substitute a
+different day. Leave intentional no-management selections distinct from missing
+data. Do not adopt a site-specific carry-forward policy as a universal default.
+
+Read the consuming EcoSIM code, not only metadata or examples:
+
+- `PlantInfoMod.F90`: selected years, PFT catalog/climate mapping, topology,
+  planting and management strings, and active/event counts.
+- `ReadManagementMod.F90`: selectors, field counts, dates, units, event capacity,
+  daily-slot overwrites, and same-day irrigation property constraints.
+- `PlantDisturbsMod.F90`: intended plant removal versus ecosystem export.
+  A grain flag with zero removal/export does not represent exported grain;
+  document any adopted harvest efficiency instead of imposing 0.95 globally.
+- `DayMod.F90`: tillage codes encode mixing intensity; check implement proxies
+  rather than inferring machinery names from integer codes.
+- `FertilizerMod.F90`: soil/band placement and elemental-mass conversions;
+  include irrigation-borne nutrients in combined budgets without duplication.
+
+Use the plant and soil management skills for detailed contracts. Recompute
+water/solute and nutrient totals after merging and NetCDF readback; round-trip
+editable workbooks when conversion is part of the change. Record approximations
+such as daily blending of pulse chemistry and verify the conserved quantities.
+Save the evaluated code revision or hashes and separate source-reviewed file
+checks from compiled execution and scientific calibration. Report unavailable
+executables and blocked smoke/trait checks accurately.
+
 After the site inputs exist, assemble the folder and write the namelist with
 the bundled script from the python-tools repository root:
 
@@ -124,7 +185,8 @@ python .agents/skills/ameriflux-namelist-generator/scripts/create_site_run_folde
 
 The script:
 
-1. moves every file in `result/<SITE_ID>/` into `result/<SITE_ID>/input/`;
+1. moves input artifacts in `result/<SITE_ID>/` into `result/<SITE_ID>/input/`,
+   preserving `<SITE_ID>.html`, `progress.json`, and `PROGRESS.md` at the root;
 2. copies the PFT parameter, GHG, and microbial parameter files into `input/`
    (defaults: newest `ecosim_pftpar_*.nc`, `fatm_hist_GHGs_*.nc`, and
    `MicrobePars.*.nc` in the parent EcoSIM `input_data/`);
@@ -150,6 +212,90 @@ Default chronology: spinup repeats the first four forcing years 18 times,
 EcoSIM's `get_sim_len`, i.e. the sum of (end - start + 1) x cycles over the
 `forc_periods` triples. For US-UMB (ERA5 1981-2021) that is start 1909 and
 `stop_n = 72 + 41 = 113`.
+
+## Site Explanation HTML
+
+For each run-folder request, author a self-contained `<SITE_ID>.html` in the
+site-folder root, alongside `input/`, `run_dir/`, and `PROGRESS.md`. For example,
+`work-space/US-Ne1/US-Ne1.html` when that is the requested destination. The
+assembly helper preserves this file on reruns; writing the guide is an agent
+step after assembly, not an automatic output of the script.
+
+Use the actual site's metadata, site-filtered BADM/BIF records, source reports,
+and run configuration. Cover the following where evidence is available:
+
+- Site identity, location, ownership/research setting, coordinates, elevation,
+  climate averages and their available reference periods, vegetation, and soils.
+- Management history and site-specific planting, harvest, fertilization,
+  irrigation, tillage, or disturbance records relevant to the case.
+- Why the site is scientifically useful, clearly distinguishing research
+  questions from observed or simulated findings.
+- The local simulation period, spinup/cycling choices, input sources, management
+  interpretation, assumptions, and unresolved data gaps.
+- Checks actually performed and the current smoke-run, trait-evaluation, and
+  simulation status. Record blockers without implying that the model ran.
+- Source attribution and links to the local namelist, provenance/quality reports,
+  editable workbooks, and progress tracker using paths relative to the HTML.
+
+Separate field measurements from map products, literature priors, and modeling
+choices. Date historical descriptions and the page's status snapshot; do not
+infer current management from an older record. Identify units and distinguish
+calendar-year fertilizer totals from crop-season budgets. Describe missing
+information as unavailable rather than supplying unsupported values.
+
+### Document the selected grid
+
+Read `grid_file_in` from the current namelist and inspect that NetCDF. Include
+a dedicated grid section, even when no benchmark comparison was requested:
+
+- Identify the selected file, grid dimensions, layer selectors `NUI/NJ/NL1/NL2`,
+  supplied layer-bottom depths and runtime-derived extent. Distinguish allocated
+  slots, selected supplied layers, derived layers, source horizons and any deep
+  extrapolation. Do not present unused slots as active soil.
+- Show a depth-resolved table of bulk density, texture, FC/WP, conductivity,
+  pH, CEC and organic C with units. Explain fine-earth/whole-soil water basis.
+  Include a compact expandable inventory or linked local snapshot for the other
+  selected grid variables, including nutrient/mineral pools and Gapon values.
+- Describe surface litter, water/ice codes, FC/WP pressures, albedo, slope/aspect,
+  water-table flags/depths and directional runoff/subsurface boundaries. Interpret
+  special codes through the current reader; distinguish unknown/estimated values
+  from zero and from unused/fill values.
+- Label mapped/derived properties, geometry from a template, gap fills, model
+  estimates and unverified defaults. Link the source profile, derivation report,
+  grid workbook and current NetCDF; retain date/depth support and source limits.
+- Summarize the latest site/grid conflict assessment with failed checks, missing
+  evidence and unresolved priors. Link the report and tie its file hash to the
+  selected grid. Earlier structural passes must not imply current readiness.
+  Explain contradictions such as slope versus field terrain or FC pressure
+  versus source water-retention data without silently correcting the evidence.
+  For each root issue, show actual versus expected values, the conflict type and
+  violated relationship, physical consequence, and a concrete resolution. Follow
+  `../../ecosim-data-readiness/references/site_conflicts.md` under "Explain the
+  findings"; keep conditional assumptions distinct from confirmed contradictions.
+  Apply its "Reproducible numerical explanations" contract: include numerical
+  substitutions, affected-layer tables and useful stock totals, with structured
+  evidence and a read-only reproducer for multi-step calculations. A summary
+  such as "15% less soil mass" must link to the complete calculation.
+
+Include the density/macropore/porosity cross-check from
+`../../ameriflux-surgo-grid-extract/references/soil_volume_contract.md`:
+distinguish measured source bulk density from matrix BKDSI and computed
+particle/matrix/total porosities, document the initialized soil mass and FC/WP
+volume bases, and show the soil-volume audit result. Do not describe a
+calculated porosity as an independent measurement or use a density-only
+correction without rechecking water capacity and cold-start allocation.
+
+When inputs or configuration change, refresh affected tables, grid hashes,
+conflict status and chronology from files on disk. Keep historical benchmark
+comparisons labeled as snapshots. A documentation update does not authorize
+changing input values to make a conflict disappear.
+
+Use inline CSS, semantic headings, readable tables, and a responsive layout so
+the page works offline without remote scripts or fonts. Add simple explanatory
+graphics where useful, labeling schematics and derived quantities. Verify local
+links and section anchors, render and inspect desktop/mobile layouts, and
+refresh case status after validation or a requested simulation changes it.
+Preserve existing user-authored content when updating a guide.
 
 ## Smoke Run and Plant-Trait Evaluation
 
@@ -246,6 +392,30 @@ does not reflect them and must be rerun.
 
 Report the remaining trait findings and corrections before starting the full run.
 
+### Verify completion and year-transition compatibility
+
+Before the smoke run, check raw management selector padding using
+`../../ecosim-soil-mgmt/references/soil_mgmt_contract.md` under "Fixed-width
+string compatibility". The two-year run must pass the annual management reload,
+not merely initialize or write one year's output. Validate every selected
+management year offline as well; two simulated years do not exercise an entire
+recycled forcing plan.
+
+Do not treat process exit 0 or finite partial history as completion. EcoSIM can
+emit `ENDRUN:fail ...` and still return 0, as the NUL-padded NO failure did.
+Require the expected calendar/hourly step count, appropriate end restart/date,
+clean history scan and absence of a fatal termination in the log. Keep runtime
+completion separate from physiological screening and scientific validation.
+If the model stops early, report the last model date, actual versus expected
+steps and the fatal message even when the shell exit status is zero.
+
+Archive failed outputs and record the defect and input hashes before retrying.
+After a padding-only repair, rerun the smoke test across the failed transition
+before advancing to the full simulation. Parameter changes require a fresh
+initialization; a restart generated with old traits does not validate new ones.
+Retain user-selected sensitivity settings during a compatibility repair rather
+than automatically tuning unrelated parameters.
+
 ## Full Simulation
 
 Only when the user asks, run the full simulation with:
@@ -273,7 +443,9 @@ which the progress tracker reads. A fresh run resets `continue_run` to `.false.`
 
 Before declaring the folder workable:
 
-1. Confirm `result/<SITE_ID>/` holds only `input/`, `run_dir/`, `smoke_run/`, optional `evaluation/`, and the progress-tracker files (`progress.json`, `PROGRESS.md`), and that a new `run_dir/` holds only the namelist.
+1. Confirm the site root holds `input/`, `run_dir/`, `<SITE_ID>.html`, the
+   progress-tracker files (`progress.json`, `PROGRESS.md`), and any `smoke_run/`
+   or `evaluation/` products; a new `run_dir/` holds only the namelist.
 2. Confirm the 2-year smoke run passed and the plant-trait findings were reported (`smoke_run/smoke_summary.json`).
 2. From `run_dir/`, resolve every namelist file path that is not `'NO'`; each must be `../input/<file>`.
 3. Confirm `grid_file_in`, `pft_mgmt_in`, and `clm_hour_file_in` point to the intended site artifacts.
@@ -284,6 +456,8 @@ Before declaring the folder workable:
 8. Confirm `pft_mgmt_in` has active PFTs and reasonable planting density/depth units.
 9. Confirm soil-management selectors and event tables are plausible for fertilizer, tillage, and irrigation schedules.
 10. Confirm output frequency and `hist_fincl1` are appropriate for expected output volume.
+11. Confirm the HTML site guide exists at the site root, its local links resolve,
+    and its evidence, assumptions, and validation status match the case files.
 
 ## Scientific Cautions
 
@@ -298,6 +472,7 @@ When finished, report:
 
 - run folder path (`result/<SITE_ID>/`) and the tracker summary (`result/<SITE_ID>/PROGRESS.md`)
 - namelist path (`result/<SITE_ID>/run_dir/<SITE_ID>.namelist`)
+- HTML site-guide path (`<site-folder>/<SITE_ID>.html`)
 - shared parameter files copied into `input/` and their source paths
 - smoke-run result (exit, steps, history scan, wall time) and plant-trait findings with the report path
 - input files referenced by the namelist
