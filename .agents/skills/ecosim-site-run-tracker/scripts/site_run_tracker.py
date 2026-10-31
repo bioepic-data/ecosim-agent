@@ -46,6 +46,7 @@ STAGES: List[Tuple[str, str, List[Tuple[str, str]]]] = [
         ("run_folder", "Run folder result/<SITE_ID>/{input,run_dir}"),
         ("namelist", "Namelist with resolvable ../input/ paths"),
         ("chronology", "Chronology: start_date, forc_periods, stop_n"),
+        ("input_preflight", "Mandatory whole-case input preflight"),
     ]),
     ("model_simulation", "Model simulation", [
         ("executable", "EcoSIM executable built and identified"),
@@ -273,7 +274,8 @@ def scan_run_folder(site: Site) -> Result:
     if not site.input.exists() or not site.run_dir.exists():
         return "pending", "input/ and run_dir/ not created yet.", []
     loose = [p.name for p in site.root.iterdir()
-             if p.is_file() and p.name not in TRACKER_FILES and not p.name.startswith(".")]
+             if p.is_file() and p.name not in TRACKER_FILES and not p.name.startswith(".")
+             and not p.name.endswith(".preflight.json") and p.name != f"{site.id}.html"]
     if loose:
         return "warning", f"Files outside input/: {loose}", [str(site.root)]
     return "done", f"{len(list(site.input.iterdir()))} files in input/", [str(site.input), str(site.run_dir)]
@@ -295,6 +297,33 @@ def scan_namelist(site: Site) -> Result:
         return "failed", "; ".join(problems), [str(path)]
     climate = re.search(r"^\s*clm_hour_file_in\s*=\s*'([^']*)'", text, flags=re.MULTILINE)
     return "done", f"{path.name}; climate {climate.group(1) if climate else '?'}", [str(path)]
+
+
+def scan_input_preflight(site: Site) -> Result:
+    from Tools.case_preflight import sha256
+    namelist = namelist_file(site)
+    candidates = [namelist.with_suffix('.preflight.json'), site.root / 'production.preflight.json']
+    reports = [p for p in candidates if p.is_file()]
+    if not reports:
+        return 'pending', 'Mandatory input preflight has not been run.', []
+    path = max(reports, key=lambda p: p.stat().st_mtime_ns)
+    report = json.loads(path.read_text())
+    evidence = [str(path)]
+    if report.get('status') == 'invalid':
+        return 'failed', 'Mandatory input preflight failed; resolve errors and rerun.', evidence
+    if report.get('schema_version') != 1 or report.get('status') not in ('ready', 'ready_with_warnings'):
+        return 'warning', 'Unrecognized preflight report; rerun the mandatory check.', evidence
+    if not namelist.is_file() or report.get('namelist_sha256') != sha256(namelist):
+        return 'warning', 'Preflight namelist is stale; rerun the mandatory check.', evidence
+    if not report.get('inputs'):
+        return 'warning', 'Preflight input identities missing; rerun the mandatory check.', evidence
+    for item in report['inputs'].values():
+        file = Path(item['path'])
+        if not file.is_file() or item.get('sha256') != sha256(file):
+            return 'warning', f'Preflight input changed: {file}; rerun the mandatory check.', evidence
+    if report['status'] == 'ready_with_warnings':
+        return 'warning', 'Input checks passed with unresolved scientific/metadata warnings; see report.', evidence
+    return 'done', 'Current selected inputs passed the mandatory preflight.', evidence
 
 
 def parse_chronology(text: str) -> Optional[Dict[str, Any]]:
@@ -433,6 +462,7 @@ SCANNERS: Dict[str, Callable[[Site], Result]] = {
     "run_folder": scan_run_folder,
     "namelist": scan_namelist,
     "chronology": scan_chronology,
+    "input_preflight": scan_input_preflight,
     "executable": scan_executable,
     "smoke_test": scan_smoke_test,
     "plant_traits": scan_plant_traits,
@@ -502,11 +532,11 @@ def scan(site: Site, state: Dict[str, Any]) -> Dict[str, Any]:
             if step.get("source") == "manual":
                 # Keep the manual status, but show what the files currently say.
                 step.update({"auto_status": status, "detail": detail, "evidence": evidence})
-                if name == 'soil_grid':
+                if name in ('soil_grid', 'input_preflight'):
                     # A historical manual approval must not hide a new conflict
                     # or an unverified/stale site-evidence assessment.
                     step.setdefault('manual_status', step['status'])
-                    step['status'] = status if status in ('failed', 'warning') else step['manual_status']
+                    step['status'] = status if status in ('failed', 'warning') or (name == 'input_preflight' and status == 'pending') else step['manual_status']
                 continue
             if (status, detail) != (step["status"], step["detail"]):
                 step["updated"] = now()

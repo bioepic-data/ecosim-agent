@@ -60,6 +60,9 @@ class HelperTests(unittest.TestCase):
 
 class SmokeRunTests(unittest.TestCase):
     def setUp(self):
+        # Stub files exercise orchestration; full input validation has dedicated tests.
+        self.preflight = mock.patch.object(smoke, 'enforce_preflight', return_value={'status': 'ready'}).start()
+        self.addCleanup(mock.patch.stopall)
         self.tmp = tempfile.TemporaryDirectory()
         self.result = Path(self.tmp.name, "result")
         self.site = self.result / SITE
@@ -172,6 +175,48 @@ class SmokeRunTests(unittest.TestCase):
         (self.site / "run_dir" / f"{SITE}.namelist").unlink()
         status, _ = self.run_smoke()
         self.assertEqual(status, 2)
+
+
+    def test_mandatory_production_preflight_blocks_before_cleanup_or_launch(self):
+        directory = self.site / 'smoke_run'
+        directory.mkdir()
+        old_log = directory / 'smoke.log'
+        old_log.write_text('previous evidence')
+        self.preflight.side_effect = smoke.PreflightError('later production year missing')
+        with mock.patch.object(smoke, 'run_model') as launch:
+            status, _ = self.run_smoke()
+        self.assertEqual(status, 2)
+        launch.assert_not_called()
+        self.assertEqual(old_log.read_text(), 'previous evidence')
+        self.assertIn('production.preflight.json', str(self.preflight.call_args))
+
+    def test_short_case_preflight_also_blocks_before_cleanup(self):
+        directory = self.site / 'smoke_run'
+        directory.mkdir()
+        (directory / 'smoke.log').write_text('previous evidence')
+        self.preflight.side_effect = [{'status':'ready'}, smoke.PreflightError('invalid smoke configuration')]
+        with mock.patch.object(smoke, 'run_model') as launch:
+            status, _ = self.run_smoke()
+        self.assertEqual(status, 2)
+        launch.assert_not_called()
+        self.assertEqual((directory / 'smoke.log').read_text(), 'previous evidence')
+
+
+    def test_trait_review_includes_later_rotation_crop(self):
+        directory = self.site / 'smoke_run'
+        directory.mkdir()
+        for year in (1912, 1913):
+            (directory / f'{SITE}.plant_trait.desc.{year}').touch()
+        first = dict(findings=[], plants=[], finding_counts={'ERROR':0,'WARN':0},total_blocks=1,checked_blocks=1)
+        later = dict(findings=[dict(severity='ERROR',parameter='XKO2',message='later maize crop is invalid',pft_code='maiz41')],
+                     plants=[],finding_counts={'ERROR':1,'WARN':0},total_blocks=1,checked_blocks=1)
+        results = [mock.Mock(stdout=json.dumps(x),stderr='',returncode=0) for x in (first,later)]
+        with mock.patch.object(smoke.subprocess,'run',side_effect=results):
+            result=smoke.check_traits(directory,SITE,SITE,None)
+        self.assertEqual(result['status'],'errors')
+        self.assertEqual(result['errors'],1)
+        self.assertEqual(len(result['desc_files']),2)
+        self.assertIn('later maize crop',result['findings'][0])
 
 
 if __name__ == "__main__":

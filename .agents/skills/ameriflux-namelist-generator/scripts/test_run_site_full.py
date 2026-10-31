@@ -53,6 +53,9 @@ TOTAL = 35064  # 1909-1912 hours (1912 leap)
 
 class FullRunTests(unittest.TestCase):
     def setUp(self):
+        # Stub files exercise orchestration; full input validation has dedicated tests.
+        self.preflight = mock.patch.object(full, 'enforce_preflight', return_value={'status': 'ready'}).start()
+        self.addCleanup(mock.patch.stopall)
         self.tmp = tempfile.TemporaryDirectory()
         self.result = Path(self.tmp.name, "result")
         self.run_dir = self.result / SITE / "run_dir"
@@ -111,6 +114,31 @@ class FullRunTests(unittest.TestCase):
         status, _, _ = self.run_full()
         self.assertEqual(status, 0)
         self.assertIn("continue_run=.false.", path.read_text())
+
+
+    def test_preflight_failure_preserves_continue_flag_and_prior_outputs(self):
+        path = self.run_dir / f'{SITE}.namelist'
+        text = NAMELIST.replace('continue_run=.false.', 'continue_run=.true.')
+        path.write_text(text)
+        log = self.run_dir / f'{SITE}.run.log'
+        log.write_text('previous evidence')
+        self.preflight.side_effect = full.PreflightError('invalid full-run input')
+        with mock.patch.object(full, 'run_once') as launch, redirect_stderr(io.StringIO()):
+            status = full.main(['--site-id', SITE, '--result-dir', str(self.result), '--exe', str(self.exe)])
+        self.assertEqual(status, 2)
+        launch.assert_not_called()
+        self.assertEqual(path.read_text(), text)
+        self.assertEqual(log.read_text(), 'previous evidence')
+
+    def test_continuation_is_rechecked_before_changing_flag(self):
+        os.environ.update({'FAIL_YEAR':'1911', 'CONT_NSTEP':str(TOTAL-17520)})
+        self.preflight.side_effect = [{'status':'ready'}, {'status':'ready'},
+                                      full.PreflightError('restart preflight failed')]
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            status = full.main(['--site-id',SITE,'--result-dir',str(self.result),'--exe',str(self.exe)])
+        self.assertEqual(status,2)
+        self.assertIn('continue_run=.false.', (self.run_dir/f'{SITE}.namelist').read_text())
+        self.assertFalse((self.run_dir/f'{SITE}.continue.log').exists())
 
 
 if __name__ == "__main__":

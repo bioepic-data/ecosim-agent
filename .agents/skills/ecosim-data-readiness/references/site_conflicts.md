@@ -145,6 +145,18 @@ and expandable per-layer evidence. Refresh resolved findings too: show the
 previous value, correction, source bound and remaining assumptions. An adopted
 value within a field bound is a modeling choice, not an exact field measurement.
 
+### HTML warning and conflict titles
+
+In generated or refreshed HTML guides/reports, make the warning/conflict section
+title and its warning/conflict subsection headings visibly **red**. Apply a
+dedicated class to those titles, for example
+`.warning-conflict-title { color: #b91c1c; }` on a light background; choose a
+contrasting red for other themes. Apply the class to an expandable summary too
+when it serves as the section title. Keep body text readable in its normal color.
+Retain explicit warning/conflict and severity labels, including conditional or
+unverified status; color alone must not imply a confirmed error. Check that the
+rendered titles remain red after regeneration and existing heading styles.
+
 ## Reproducible numerical explanations
 
 When a finding claims a numerical discrepancy, supply enough information for a

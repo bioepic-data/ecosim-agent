@@ -20,6 +20,9 @@ spec.loader.exec_module(mod)
 
 class OutputCheckTests(unittest.TestCase):
     def setUp(self):
+        # Output tests use a year-only input; case preflight is tested separately.
+        self.preflight = patch.object(mod, 'enforce_preflight', return_value={'status': 'ready'}).start()
+        self.addCleanup(patch.stopall)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
@@ -225,6 +228,19 @@ print('wrote out restart data at nstep =',n*24)
         with patch.object(mod,'load_module',return_value=SimpleNamespace(validate=lambda path:dict(findings=[dict(severity='error')]))):
             with self.assertRaisesRegex(ValueError,'Climate readiness failed'):mod.run(self.scratch,exe)
         self.assertFalse((self.scratch/'execution.json').exists())
+
+
+    def test_whole_production_preflight_blocks_one_year_execution(self):
+        self.prepare()
+        exe=self.root/'fake_model'
+        exe.write_text('#!/bin/sh\nexit 0\n');exe.chmod(0o755)
+        self.preflight.side_effect=ValueError('invalid production forcing year')
+        with patch.object(mod.subprocess,'Popen') as launch:
+            with self.assertRaisesRegex(ValueError,'invalid production forcing year'):
+                mod.run(self.scratch,exe)
+        launch.assert_not_called()
+        self.assertFalse((self.scratch/'execution.json').exists())
+        self.assertEqual(Path(self.preflight.call_args.args[0]),self.namelist.resolve())
 
 
 if __name__=='__main__':unittest.main()

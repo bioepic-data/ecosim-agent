@@ -1,6 +1,6 @@
 ---
 name: ecosim-site-run-tracker
-description: Track and report progress of a request to create and run an EcoSIM case for a site ("create an ecosim run for site US-UMB", "set up and run EcoSIM at <site>"). Records four stages — data preparation, namelist creation, model simulation, and output evaluation — in result/<SITE_ID>/progress.json and PROGRESS.md, derives step status from files and quality reports on disk, and records manual results such as the executable, test run, and evaluation verdicts. Use at the start of such a request, after each stage, and whenever the user asks where a site run stands.
+description: Track and report progress of a request to create and run an EcoSIM case for a site ("create an ecosim run for site US-UMB", "set up and run EcoSIM at SITE"). Records four stages — data preparation, namelist creation, model simulation, and output evaluation — in result/SITE_ID/progress.json and PROGRESS.md, derives step status from files and quality reports on disk, and records manual results such as the executable, test run, and evaluation verdicts. Use at the start of such a request, after each stage, and whenever the user asks where a site run stands.
 ---
 
 # EcoSIM Site Run Tracker
@@ -16,7 +16,7 @@ description: Track and report progress of a request to create and run an EcoSIM 
 | Stage | Steps | Detected from |
 | --- | --- | --- |
 | Data preparation | `site_metadata`, `climate_forcing`, `atmospheric_chemistry`, `soil_grid`, `plant_management`, `soil_management` | `<SITE_ID>_ecosim_site.json` (location checks, run live if not recorded), `<SITE_ID>_ecosim_climate_<first>-<last>.nc` and ERA5 quality report (time registration, ZNOONG, tower warnings), climate derivation report (derived chemistry), grid NetCDF and layer validation (run live if not recorded), plant and soil management NetCDF |
-| Namelist creation | `run_folder`, `namelist`, `chronology` | `result/<SITE_ID>/{input,run_dir}`, namelist paths resolving from `run_dir/`, `stop_n` equal to EcoSIM `get_sim_len` of `forc_periods` |
+| Namelist creation | `run_folder`, `namelist`, `chronology`, `input_preflight` | `result/<SITE_ID>/{input,run_dir}`, namelist paths resolving from `run_dir/`, `stop_n` equal to EcoSIM `get_sim_len` of `forc_periods` |
 | Model simulation | `executable`, `smoke_test`, `plant_traits`, `full_run` | executable recorded by the smoke run; `smoke_run/smoke_summary.json` from `create_site_smoke_run.py` (2-year run: exit, steps, history scan); its `trait_check` and literature-backed correction rounds (`done` when corrections fixed every severe finding; `failed` when findings remain unresolved or rounds ran out; without corrections, strict errors fail and warnings or missing web evidence give `warning`); `run_dir/full_run_summary.json` from `run_site_full.py` (fresh run, plus one continued run on failure); without it, `*.ecosim.h0.*.nc` history files in `run_dir/` (reported `in_progress` until the run is confirmed) |
 | Output evaluation | `target_extraction`, `benchmark_comparison`, `evaluation_report` | files in `result/<SITE_ID>/evaluation/` named `*targets*`, `*comparison*`/`*benchmark*`, `*report*` |
 
@@ -51,6 +51,12 @@ Run from the python-tools repository root.
    ```
 
 4. Answer status questions from `show` (or `show --json`) after a fresh `scan`.
+
+The `input_preflight` step requires a current shared case-preflight report.
+Missing reports stay pending, errors fail the step, and changed configuration or
+input hashes require a fresh check. A manual approval cannot hide missing,
+failed or stale preflight evidence. See the
+[preflight contract](../ameriflux-namelist-generator/references/case_preflight.md).
 
 ## Automatic Updates
 

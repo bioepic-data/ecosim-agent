@@ -6,6 +6,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -28,6 +29,9 @@ def write_climate(path, first_year, last_year):
 
 class RunFolderTests(unittest.TestCase):
     def setUp(self):
+        # Stub files exercise orchestration; full input validation has dedicated tests.
+        self.preflight = mock.patch.object(run_folder, 'enforce_preflight', return_value={'status': 'ready'}).start()
+        self.addCleanup(mock.patch.stopall)
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name, "ecosim-agent")
         self.site_root = self.repo / "result" / SITE
@@ -156,6 +160,14 @@ class RunFolderTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn('driving-data conflicts', stderr)
         self.assertFalse((self.site_root / 'run_dir' / f'{SITE}.namelist').exists())
+
+
+    def test_mandatory_preflight_failure_blocks_assembly_success(self):
+        self.preflight.side_effect = run_folder.PreflightError('invalid selected input')
+        status, stderr = self.run_folder()
+        self.assertEqual(status, 1)
+        self.assertIn('invalid selected input', stderr)
+        self.preflight.assert_called_once()
 
 
 if __name__ == "__main__":

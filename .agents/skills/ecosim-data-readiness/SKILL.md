@@ -42,12 +42,24 @@ Site BIF records may supply measurements absent from map products, but missing
 depths and conflicting stock estimates remain unresolved until their support
 and units are established. Passing the offline conflict tool is not this review.
 
+For cropland, verify the user's maximum 3 m active soil-depth policy and a
+literature-supported maximum rooting layer using
+`../ameriflux-surgo-grid-extract/references/cropland_depth_policy.md`. Check the
+runtime layer selectors as well as the CDPTH array; effective irrigation depth
+and total maximum rooting depth describe different quantities.
+
 Determine requirements from the user's task, selected site and period, relevant
 workflow skill, configuration/namelist, and consuming reader or template. Check
 only dependencies of that workflow: for example, output analysis may require
 model output and observations without requiring all simulation input categories.
 If necessary context cannot be inferred, request the missing site, period, or
 input choice while continuing independent work.
+
+For runnable site-case preparation, the
+[mandatory whole-case preflight](../ameriflux-namelist-generator/references/case_preflight.md)
+checks the actual namelist and selected files. Assembly and launch helpers enforce
+it. Re-run after input/namelist edits; stop on invalid or unsupported active
+inputs, and keep unresolved scientific evidence visible as warnings.
 
 For an EcoSIM run namelist, use
 [`ecosim-climate-readiness`](../ecosim-climate-readiness/SKILL.md) for the

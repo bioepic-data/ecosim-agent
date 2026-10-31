@@ -22,6 +22,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 from Tools.namelist_parser import parse_namelist
+from Tools.case_preflight import enforce as enforce_preflight
 
 
 def digest(path):
@@ -215,6 +216,17 @@ def run(scratch, exe, timeout_seconds=7200, allow_stale=False):
     stale = [str(p) for p in (Path(plan['ecosim_root']) / 'f90src').rglob('*.F90') if p.stat().st_mtime > exe.stat().st_mtime]
     if stale and not allow_stale:
         raise ValueError('Executable predates Fortran sources; rebuild or explicitly use --allow-stale-executable')
+    source = Path(plan['source_namelist'])
+    if not source.is_file() or digest(source) != plan['source_namelist_sha256']:
+        raise ValueError('Production namelist changed; prepare a new output-check case')
+    for entry in plan['input_files']:
+        if not Path(entry['source']).is_file() or digest(entry['source']) != entry['sha256']:
+            raise ValueError('Production input changed; prepare a new output-check case: ' + entry['source'])
+    fresh_text = re.sub(r'^(\s*)continue_run\s*=.*$', r'\g<1>continue_run=.false.', source.read_text(), flags=re.MULTILINE)
+    enforce_preflight(source, text=fresh_text, site_id=plan['site_id'], model_root=plan['ecosim_root'],
+                      output=scratch / 'production.preflight.json')
+    enforce_preflight(plan['namelist'], site_id=plan['site_id'], model_root=plan['ecosim_root'],
+                      output=scratch / 'case.preflight.json')
     climate = load_module(ROOT / '.agents/skills/ecosim-climate-readiness/scripts/check_climate_readiness.py', 'output_check_climate')
     readiness = climate.validate(plan['namelist'])
     write_json(scratch / 'climate_readiness.json', readiness)

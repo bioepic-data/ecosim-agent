@@ -10,6 +10,12 @@ metadata, field records, source units and template assumptions. Assembly runs
 `Tools/driving_data_conflicts.py`, writes the site conflict report, and stops on
 errors. Warnings remain visible and do not establish full scientific readiness.
 
+The shared [mandatory case preflight](case_preflight.md) is enforced at assembly
+completion and before the two-year smoke test, one-year evaluation-output test,
+and every full/continued launch. It checks the actual selected namelist and
+inputs, with full production coverage checked before short runs. Resolve errors
+and unsupported inputs before proceeding; retain scientific warnings.
+
 Produce a run directory that contains or can resolve:
 
 - an EcoSIM executable or symlink if the user wants it placed in the folder
@@ -105,7 +111,7 @@ result/US-UMB/
               *_pft_mgmt.nc (and *_soil_mgmt.nc when active), Excel/JSON sidecars,
               *_ecosim_site.json, derivation and quality reports, logs, plus copies
               of the PFT parameter, atmospheric GHG, and microbial parameter NetCDF
-  run_dir/    US-UMB.namelist only; every input path is ../input/<file>
+  run_dir/    US-UMB.namelist and preflight report; inputs use ../input/<file>
 ```
 
 The extraction skills write their artifacts directly into `result/<SITE_ID>/`.
@@ -113,7 +119,7 @@ Assembling the run folder moves input artifacts into `input/`. The site HTML
 guide and tracker files remain at the site root. Copying the shared parameter files makes the
 folder self-contained and pins the parameter versions used by the case.
 
-Do not create `output/` or other files in `run_dir/`; EcoSIM writes its output
+Keep only configuration/preflight artifacts in `run_dir/` before launch; EcoSIM writes its output
 there when run. Link or copy an executable into `run_dir/` only when the user
 asks or gives its path; otherwise report the executable assumption.
 
@@ -242,6 +248,12 @@ choices. Date historical descriptions and the page's status snapshot; do not
 infer current management from an older record. Identify units and distinguish
 calendar-year fertilizer totals from crop-season budgets. Describe missing
 information as unavailable rather than supplying unsupported values.
+
+Use visibly red titles for warning/conflict sections and their warning/conflict
+subheadings, including expandable section summaries. Follow the CSS and severity
+label guidance in
+`../../ecosim-data-readiness/references/site_conflicts.md` under "HTML warning
+and conflict titles" when creating or refreshing the guide.
 
 ### Document the selected grid
 
@@ -408,6 +420,11 @@ and every unresolved finding. A full simulation made before the corrections
 does not reflect them and must be rerun.
 
 Report the remaining trait findings and corrections before starting the full run.
+
+Trait review must include every model-generated description from the smoke
+years. Rotating crops can change PFT between years; checking only the first
+`.desc` file misses later crops. The smoke helper aggregates all year reports
+for correction and readiness; retain individual crop evidence.
 
 ### Verify completion and year-transition compatibility
 

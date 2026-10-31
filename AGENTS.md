@@ -35,7 +35,13 @@ For requests to create, set up, or run an EcoSIM case for a site (for example
 with the request text before preparing data, record what files cannot show
 (steps that do not apply, the executable, test and full runs, evaluation
 verdicts) with `set`, and report stage status from `result/<SITE_ID>/PROGRESS.md`
-at the end and whenever asked. After creating the run folder, always run the
+at the end and whenever asked. In this site workflow, case assembly and every
+model launch must pass the shared
+`Tools/case_preflight.py` gate on the current namelist and selected inputs
+(see `.agents/skills/ameriflux-namelist-generator/references/case_preflight.md`).
+Errors and unsupported active configurations block; scientific evidence warnings
+remain visible. Recheck after edits, and check production coverage before short
+runs. After creating the run folder, always run the
 2-year smoke run and plant-trait evaluation
 (`ameriflux-namelist-generator/scripts/create_site_smoke_run.py`), correcting
 severe trait findings in the site PFT parameter copy until they are fixed, and

@@ -154,5 +154,36 @@ class TrackerTests(unittest.TestCase):
         self.assertEqual(status, 1)
 
 
+    def test_mandatory_preflight_failure_and_staleness_cannot_be_manually_approved(self):
+        from Tools.case_preflight import sha256
+        self.build_run_folder()
+        self.run_cli('init')
+        self.assertEqual(self.step('input_preflight')['status'],'pending')
+        self.run_cli('set','--step','input_preflight','--status','done')
+        self.run_cli('scan')
+        self.assertEqual(self.step('input_preflight')['status'],'pending')
+        nml=self.site/'run_dir'/f'{SITE}.namelist'
+        data=dict(schema_version=1,status='invalid',inputs={},namelist_sha256=sha256(nml))
+        report=nml.with_suffix('.preflight.json')
+        report.write_text(json.dumps(data))
+        self.run_cli('scan')
+        self.assertEqual(self.step('input_preflight')['status'],'failed')
+        source=self.site/'input/pft.nc'
+        data.update(status='ready',inputs={'pft_file_in':dict(path=str(source),sha256=sha256(source))})
+        report.write_text(json.dumps(data));self.run_cli('scan')
+        self.assertEqual(self.step('input_preflight')['status'],'done')
+        source.write_bytes(b'changed')
+        self.run_cli('scan')
+        self.assertEqual(self.step('input_preflight')['status'],'warning')
+
+
+    def test_expected_site_guide_and_preflight_are_not_loose_inputs(self):
+        self.build_run_folder()
+        (self.site/f'{SITE}.html').write_text('<!doctype html><title>Site guide</title>')
+        (self.site/'production.preflight.json').write_text('{}')
+        status,detail,_=tracker.scan_run_folder(tracker.Site(self.result,SITE))
+        self.assertEqual(status,'done',detail)
+
+
 if __name__ == "__main__":
     unittest.main()

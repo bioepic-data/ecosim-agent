@@ -83,6 +83,15 @@ test; it does not replace it or establish scientific model performance.
 - Ensure the greenhouse-gas forcing spans the requested simulation period. Historical-only `fatm_hist_GHGs_1750-2023.nc` is not sufficient for future SSP runs.
 - If `forc_periods` repeats a short forcing window for spinup, make that intentional and document it in the run notes.
 
+## Mandatory input gate
+
+Use the shared [case preflight](references/case_preflight.md) before declaring
+assembly complete and before every smoke, evaluation-output or full/continued
+run. The supplied assembly/run scripts enforce it; a previous report cannot
+substitute for a fresh check after input or namelist changes. Errors and
+unsupported active configurations block; scientific evidence warnings remain
+visible and still require the sourced site review.
+
 ## Validation
 
 Run:

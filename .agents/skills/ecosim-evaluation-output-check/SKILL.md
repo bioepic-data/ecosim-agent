@@ -53,6 +53,13 @@ actually emitted; adding a name alone does not establish successful output.
 Unsupported namelist syntax, coupled/daily-only forcing or restart initialization
 must be resolved explicitly rather than silently approximated.
 
+Before launch, `run` enforces the shared
+[case preflight](../ameriflux-namelist-generator/references/case_preflight.md)
+on both the source production request and the one-year scratch case. A missing
+later production year blocks even if the selected short year is complete. Source
+namelist changes require a new prepared case. Unsupported model namelist keys
+are errors even when another model version or a template supports them.
+
 Select/build the intended executable using repository `AGENTS.md` toolchain
 instructions. `run` rejects an executable older than selected Fortran sources;
 `--allow-stale-executable` is an explicit diagnostic exception, retained in the

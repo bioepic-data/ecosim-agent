@@ -41,6 +41,8 @@ For a site run folder, refresh its HTML grid documentation using the checklist
 in `../ameriflux-namelist-generator/references/runfolder_workflow.md` under
 "Document the selected grid". Include actual layer values, provenance and
 conflict status, rather than only describing the soil series.
+Give HTML warning/conflict sections red titles, following "HTML warning and
+conflict titles" in the site-conflicts reference above.
 
 For soil texture or organic carbon, review site-filtered BIF and field/literature
 evidence before accepting mapped values. Follow
@@ -48,6 +50,12 @@ evidence before accepting mapped values. Follow
 selection, missing sampling depths, concentration-to-stock comparisons and
 authorized corrections. Mapping success does not establish field agreement;
 the offline conflict tool does not perform this numerical evidence review.
+
+For cropland, apply the user's 3 m maximum active soil-depth policy and select
+the maximum rooting layer from sourced crop rooting depths. Follow
+[references/cropland_depth_policy.md](references/cropland_depth_policy.md),
+including total versus effective rooting depth and the runtime meaning of NJ,
+NL1 and NL2.
 
 1. Locate `gSSURGO_CONUS.gdb` under `data/` first, then elsewhere in the repo if needed.
 2. Identify the map unit (`MUKEY`) by spatial query on `MUPOLYGON`.
