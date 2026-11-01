@@ -74,7 +74,7 @@ The checker validates the plant blocks at the selected grid for:
 - woody versus herbaceous root trait consistency
 - cross-parameter checks such as `PhiMIN <= PhiMAX` and fine-root radius not exceeding primary-root radius
 - `RSRR` radial root resistivity, its implied fully wetted conductivity, and its interaction with soil drying and total root resistance
-- literal `RVSR` conduit radius, conifer tracheid anatomy, conduit geometry relative to `RRAD2M`, and `ARSRA` resistance correction
+- literal `RVSR` conduit radius, conifer tracheid anatomy, implied conduit count `N=0.2*(RRAD2M/RVSR)^2 >= 1` (equivalently `RVSR <= sqrt(0.2)*RRAD2M`), and `ARSRA` resistance correction
 
 Read [references/sanity_rules.md](references/sanity_rules.md) before expanding the checker or interpreting a borderline warning. Read [references/web_evidence.md](references/web_evidence.md) before making web-informed trait comparisons. Use [references/pft_case_notes.md](references/pft_case_notes.md) for retained project evidence and interpretation caveats for previously studied PFT/site combinations.
 
@@ -124,6 +124,8 @@ Web evidence findings default to `WARN` because literature and trait database ra
 For photosynthetic-property checks, interpret `RUBP`, `PEPC`, and `CHL` as fractions of the same total leaf-protein pool. Derive that pool from the smaller of the N- and P-supported amounts in active leaf structural biomass. All leaf structure is active; all non-tree root structure is active; for trees, apply root protein relationships only to active structural root biomass and exclude lignified heartwood. Separate `CNRTLIG` and `CPRTLIG` trait inputs are not required. Check `SLA1` only as an independently evidenced morphological trait. Do not use `SLA1` to back-calculate leaf-area `Vcmax`, `Jmax`, or other photosynthetic capacities unless the model mapping and all required conversions are explicitly supported.
 
 Interpret `RVSR` as the literal arithmetic mean lumen radius of root water conduits: tracheids for conifers and vessel elements for angiosperms. Do not use an effective hydraulic radius or tune `RVSR` to absorb pit and end-wall resistance; use `ARSRA` for that correction. Convert published conduit diameters to radius in meters before adding web evidence.
+
+Always report `RRAD2M`, `RVSR`, the implied conduit count and the maximum vessel radius for at least one conduit, including when the geometry passes. The 20% lumen fraction and equal-conduit representation are model assumptions, not universal anatomy. Passing this bound does not validate the count or radii; review them jointly against the represented root class. See [Root Conduit Hydraulics](references/sanity_rules.md#root-conduit-hydraulics) for the worked check. Do not automatically adjust either radius or impose a universal vessel-count range.
 
 Interpret `RSRR` as radial root resistivity per unit root surface area in `MPa h m-1`, not as conductivity. Convert it to the fully wetted intrinsic radial conductivity with `k_radial = 1/(3600*RSRR)` in `m s-1 MPa-1`. High `RSRR` means low radial conductivity. Review it separately from `RVSR` and `ARSRA`, which control axial transport, and remember that EcoSIM further increases radial resistance as the soil micropore water fraction declines.
 
@@ -184,6 +186,11 @@ python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait
 The script returns a nonzero status when `ERROR` findings are present or when no blocks match the requested grid. With `--strict-physiology`, physiological-consistency warnings are promoted to `ERROR` except the model-formulation-sensitive `Jmax:Vcmax` diagnostic, which remains a lower-priority `WARN`. Unrelated ecological warnings also remain warnings.
 
 ## Reporting Guidance
+
+For seasonal physiology, realized traits, history-based diagnosis or parameter
+sensitivity comparisons, use
+[ecosim-plant-history-evaluation](../ecosim-plant-history-evaluation/SKILL.md).
+This checker supplies the static parameter checks for that evaluation.
 
 For iterative correction of an existing case through five-day runs and fresh
 trait read-back, use

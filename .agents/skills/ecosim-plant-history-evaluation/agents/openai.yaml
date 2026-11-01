@@ -1,0 +1,4 @@
+interface:
+  display_name: "EcoSIM Plant History Evaluation"
+  short_description: "Evaluate plant physiology from EcoSIM history"
+  default_prompt: "Use $ecosim-plant-history-evaluation to evaluate EcoSIM plant history against selected traits, model equations, and site observations, with seasonal diagnostics and supported tuning priorities."

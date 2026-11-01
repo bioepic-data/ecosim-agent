@@ -7,6 +7,11 @@ description: Extract typical annual GPP, annual evapotranspiration, mid-season L
 
 ## Purpose
 
+For interpretation against selected plant parameters, coupled seasonal
+diagnostics, literature/field comparisons or tuning recommendations, use
+[ecosim-plant-history-evaluation](../ecosim-plant-history-evaluation/SKILL.md).
+This extractor provides basic summaries, not a complete physiological verdict.
+
 Use this skill to summarize key ecosystem and plant physiological targets from EcoSIM `h0` NetCDF output:
 
 - typical annual GPP
