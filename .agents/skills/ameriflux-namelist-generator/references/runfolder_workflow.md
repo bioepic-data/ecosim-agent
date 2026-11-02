@@ -123,6 +123,46 @@ Keep only configuration/preflight artifacts in `run_dir/` before launch; EcoSIM 
 there when run. Link or copy an executable into `run_dir/` only when the user
 asks or gives its path; otherwise report the executable assumption.
 
+## Existing-case experiments and parameter identity
+
+Keep an existing case and its outputs intact when preparing a forcing or
+parameter experiment. Use a separate case name and run folder, and copy or
+explicitly pin the selected inputs. Reuse the working executable without a
+build investigation when the user has already established that it works.
+Honor whether the request is to prepare a run or execute it; smoke/output
+checks are distinct from launching the full production simulation.
+
+For a forcing-only comparison, retain the parent PFT parameters, management and
+soil values. Do not silently tune traits as part of the forcing change. Report
+inherited trait findings separately from execution/preflight status and follow
+the existing trait-review requirements before a full run. A successful smoke
+run and a failed trait check can coexist; neither result should hide the other.
+
+When the user names a PFT file, resolve that exact file before considering
+newest-file discovery or a site-named snapshot. Prefer preserving its dated
+basename in the isolated input copy and selecting it explicitly in
+`pft_file_in`. Record the requested source, actual selected path and SHA-256
+for both. Inspect the resulting namelist after helpers run: a helper's canonical
+site-copy name must not silently obscure the user's file choice. Distinguish
+"same values under a different filename" from a parameter correction.
+
+A path-only update with byte-identical inputs does not need another numerical
+simulation solely to repeat the same calculation. Refresh the current namelist,
+whole-case preflight, manifest, hashes, guide and tracker. Preserve old test
+reports and configuration paths as historical evidence, with an explicit
+identity/equivalence record linking them to the revised selection; do not
+rewrite old reports to imply they ran the new namelist. Changed parameter bytes,
+solver/output settings or forcing semantics need affected checks again.
+
+A forcing file's endpoint does not establish whole-case coverage. Limit the
+production chronology to jointly supported management and model-year GHG
+coverage unless an extension is explicitly prepared. Choose fresh initialization
+and spinup when the objective needs state developed under the new forcing;
+use a restart branch when inherited state is intentional and report its legacy
+forcing dependence. Refresh a preflight after changing chronology or inputs.
+Resolve executable paths absolutely before calling a helper that changes its
+working directory.
+
 ## Multiple Sites
 
 When the request covers several sites, prepare each site with this workflow in

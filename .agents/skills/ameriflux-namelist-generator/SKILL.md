@@ -92,6 +92,11 @@ substitute for a fresh check after input or namelist changes. Errors and
 unsupported active configurations block; scientific evidence warnings remain
 visible and still require the sourced site review.
 
+For experiments that change an existing case, follow
+[experiment isolation and parameter identity](references/runfolder_workflow.md#existing-case-experiments-and-parameter-identity).
+Honor an explicitly named PFT file, distinguish a filename change from changed
+parameter values, and retain historical validation provenance.
+
 ## Validation
 
 Run:

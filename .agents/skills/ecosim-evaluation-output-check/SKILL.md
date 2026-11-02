@@ -97,6 +97,13 @@ handled explicitly; the filename alone does not prove year coverage.
   pass. Target-specific `blocked` issues yield an incomplete result even if the
   other history fields pass. Preserve observation-unit/depth uncertainty in the
   manifest; the script cannot establish scientific equivalence from strings.
+- Refresh inherited manifests against current registry/output and observation
+  metadata before reuse. A previously blocked net-radiation mapping or unknown
+  sensor depth may already have been resolved in a later site evaluation.
+  Record the evidence for each revision; do not repeat stale missing-data
+  claims or mark a conditional conversion as exact. Report process/history
+  success, mapped-target passes and unresolved scientific mappings separately:
+  an overall `incomplete` report is not necessarily an execution failure.
 - `VSPore_vr * rWatFLP_vr` made from separately averaged daily fields is not
   necessarily mean volumetric water content. Prefer a directly accumulated
   volumetric-water field or demonstrate the needed instantaneous/time-weighted

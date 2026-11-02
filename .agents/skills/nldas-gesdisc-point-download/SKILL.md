@@ -71,7 +71,8 @@ EcoSIM annual auxiliary variables written by the Giovanni EcoSIM writer:
 - The Giovanni EcoSIM writer defaults to `--add-us-chemistry auto`, which adds NADP chemistry for coordinates in `[-125, -67]` longitude and `[25, 53]` latitude. Use `--add-us-chemistry never` to skip or `--add-us-chemistry always` to force.
 - Use `--chemistry-input` to point to an alternate NADP raster directory and `--chemistry-output` to choose the intermediate extracted-chemistry JSON path.
 
-Other primary File A variables, only when explicitly requested:
+Additional primary File A variables (include `LWdown` for complete EcoSIM
+meteorological forcing; other entries only when explicitly requested):
 
 - `LWdown`: downward longwave radiation, `W m-2`.
 - `PotEvap`: potential evaporation, `kg m-2`.
@@ -82,7 +83,7 @@ Other primary File A variables, only when explicitly requested:
 
 1. Confirm the user supplied longitude then latitude. If a value looks swapped, stop and ask for clarification because the grid-cell choice affects water and energy forcing.
 2. Confirm the requested period and variables. Interpret all times as UTC unless the user explicitly says otherwise.
-3. When the user asks for "first to last available year" for EcoSIM, use `--auto-span complete-calendar-years`; this drops the partial first year (`1979`) and incomplete trailing year (`2026` as of June 26, 2026).
+3. When the user asks for "first to last available year" for EcoSIM, use `--auto-span complete-calendar-years`; verify actual archive availability and exclude partial boundary years. Do not infer the latest complete year from the current date alone.
 4. Ensure Earthdata credentials are available when GES DISC requires authentication. The standard repo workflow is to set `USR_NLDAS` and `PASSWD_NLDAS` in `~/.bashrc`; the script sources that file automatically when needed. The user may still pass `--username` and `--password` to override.
 5. Run the script from the repository root.
 6. Inspect the generated CSV and manifest:
@@ -108,6 +109,38 @@ Other primary File A variables, only when explicitly requested:
 - `PSurf` is Pa; EcoSIM climate tools often use kPa for `PATM`.
 - `Rainf` is hourly accumulated water mass per area (`kg m-2`), numerically equivalent to mm water depth for liquid water density. Do not treat it as a `kg m-2 s-1` rate unless the file metadata for a future product says so.
 - `Wind_E` and `Wind_N` are vector components. Compute wind speed as `sqrt(Wind_E**2 + Wind_N**2)` only when the downstream workflow needs scalar speed.
+
+## EcoSIM time registration and case handoff
+
+For multi-year point requests, consult
+[the access reference](references/nldas_gesdisc_api.md) for the Giovanni route
+before scheduling hundreds of thousands of granule requests. Verify current
+service behavior; retain source metadata, point caches and checksums. A matched
+native-granule sample checks extraction identity, not accuracy at the tower.
+
+Include `LWdown` explicitly when the downloader's seven-field default would
+omit incident longwave needed by the model comparison. Download boundary-buffer
+hours for the requested local-standard-time calendar and adjacent endpoint
+averaging. The NASA NLDAS2 README and native metadata distinguish instantaneous
+meteorology/radiation from backward hourly rain accumulations. An endpoint
+average approximates a mean; rain stamped at t+1 belongs to [t,t+1). Do not
+apply the historical ERA empirical shift to NLDAS or multiply hourly accumulated
+rain by 3600. Retain complete local years after UTC conversion, including leap
+days, with explicit clock/interval metadata.
+
+Inspect the writer's output rather than inheriting example-site defaults:
+requested site coordinates, native grid coordinates, site title, pressure/vapor
+pressure units, wind reference height (native 10 m), and local mean solar noon.
+Check whether EcoSIM adds the equation of time before embedding it in ZNOONG.
+Label annual chemistry provenance and edge-year carry-forwards independently
+of the meteorological coverage. Run the shared precipitation-budget audit and
+`../ecosim-climate-readiness/SKILL.md` on the final file; broad hourly bounds
+alone do not establish a plausible annual water input.
+
+When tower bias adjustment is requested, use
+[`ecosim-lange-bias-adjustment`](../ecosim-lange-bias-adjustment/SKILL.md).
+Preserve the raw extraction; a corrected candidate needs its own held-out
+evaluation, metadata and file identity.
 
 ## Validity Checks
 
