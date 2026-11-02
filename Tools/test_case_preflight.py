@@ -105,6 +105,16 @@ stop_option='nyears'
         with nc.Dataset(self.root/filename,'a') as ds:
             ds[name][index]=value
 
+    def test_precipitation_plausibility_findings_reach_case_preflight(self):
+        with nc.Dataset(self.root/'weather.nc', 'a') as ds:
+            ds['RAINH'][:] = .4
+            ds.precip_climatology_mm = 790.37
+            ds.precip_climatology_source = 'test reference'
+        report = pre.validate(self.nml)
+        codes = [f['category'] for f in report['findings']]
+        self.assertIn('climate:precipitation_annual_climatology_mismatch', codes)
+        self.assertIn('climate:precipitation_tower_unverified', codes)
+
     def test_complete_inputs_pass_with_scientific_warnings_and_unused_padding(self):
         report=self.report()
         self.assertEqual(self.errors(report),[])

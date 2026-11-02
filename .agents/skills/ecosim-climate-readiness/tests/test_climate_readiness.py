@@ -64,6 +64,16 @@ delta_time=3600.d0
     def codes(self, report):
         return [f['code'] for f in report['findings']]
 
+    def test_precipitation_budget_warning_propagates_without_hourly_range_error(self):
+        with nc.Dataset(self.climate, 'a') as d:
+            d['RAINH'][:] = .4
+            d.precip_climatology_mm = 790.37
+            d.precip_climatology_source = 'test site climatology'
+        report = self.run_check()
+        self.assertIn('precipitation_annual_climatology_mismatch', self.codes(report))
+        self.assertNotIn('out_of_range', self.codes(report))
+        self.assertEqual(report['status'], 'ready_with_warnings')
+
     def test_complete_years_and_calendar_padding(self):
         # Non-leap day 366 is unused; leap-year day 366 is required.
         self.change('TMPH', (1,365,slice(None),0), 1e30)

@@ -19,6 +19,7 @@ import numpy as np
 AGENT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(AGENT))
 from Tools.namelist_parser import parse_namelist
+from Tools.precipitation_quality import precipitation_budget
 
 # Units are the INPUT units used by ClimReadMod, before its hourly conversions.
 HOURLY = {
@@ -326,6 +327,13 @@ def validate(namelist, run_cwd=None, all_periods=False):
                     following = np.minimum(np.minimum(model_days+1, last_day), forcing_last)
                     for name, extra in [('TMPX', previous), ('TMPN', following), ('DWPT', np.union1d(previous, following))]:
                         daily_neighbors.setdefault((mode, year, name), set()).update(extra.tolist())
+            # Recompute budgets from the selected file, rather than trusting an old quality JSON.
+            for mode, (file, ds, file_years, entry) in datasets.items():
+                if mode == 'hourly':
+                    selected_years = {year for selected_mode, year in requested if selected_mode == mode}
+                    audit = precipitation_budget(file, years=selected_years)
+                    entry['precipitation_budget'] = audit
+                    report['findings'].extend(audit['findings'])
             for (mode, year), selected in sorted(requested.items()):
                 file, ds, years, entry = datasets[mode]
                 entry['required_years'].append(year)

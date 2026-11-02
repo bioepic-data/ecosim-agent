@@ -168,3 +168,12 @@ The script creates a JSON file named `result/<SITE_ID>/<site_name>_ecosim_site.j
   "IXTYP1": 10        # Vegetation type code
 }
 ```
+
+## Optional precipitation climatology
+
+When the site page provides mean annual precipitation, preserve it as
+`mean_annual_precip_mm` with `precipitation_reference` (the source URL/path).
+Do not substitute the forcing's own mean or infer a missing value from another
+metadata field. Older cached records may lack MAP; the forcing workflow must
+then obtain a sourced reference or report precipitation plausibility unverified.
+This field is a climatological comparison reference, not an annual rain target.

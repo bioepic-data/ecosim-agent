@@ -135,10 +135,12 @@ def find_era5_file(site_id, data_dir="data"):
                 return os.path.join(root, file)
     return None
 
-def run_era5_conversion(era5_file, output_file, site_id, quality_report_file=None):
+def run_era5_conversion(era5_file, output_file, site_id, quality_report_file=None, mean_annual_precip_mm=None, precip_reference=None):
     """Run the ERA5 to EcoSIM conversion."""
     script_path = find_skill_script("ameriflux-era5-to-ecosim", "era5_to_ecosim_converter.py")
     cmd = [sys.executable, script_path, "--input", era5_file, "--output", output_file, "--site-id", site_id]
+    if mean_annual_precip_mm is not None:
+        cmd.extend(['--mean-annual-precip-mm', str(mean_annual_precip_mm), '--precip-reference', str(precip_reference or '')])
     if quality_report_file:
         cmd.extend(["--quality-report", quality_report_file])
     result = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
@@ -326,6 +328,8 @@ def main():
     parser.add_argument('--data-dir', default='data', help='Data directory')
     parser.add_argument('--result-dir', default='result', help='Result directory')
 
+    parser.add_argument('--mean-annual-precip-mm', type=float, help='Sourced site precipitation climatology (mm/year)')
+    parser.add_argument('--precip-reference', help='Citation/URL/path for precipitation climatology')
     args = parser.parse_args()
 
     site_id = args.site_id
@@ -379,7 +383,9 @@ def main():
     print("Step 3: Converting ERA5 data to EcoSIM format...")
     temp_nc = args.output + '.temp'
     era5_quality_report_file = f"{result_dir}/{site_id}_era5_quality_report.json"
-    if not run_era5_conversion(era5_file, temp_nc, site_id, era5_quality_report_file):
+    if not run_era5_conversion(era5_file, temp_nc, site_id, era5_quality_report_file,
+            mean_annual_precip_mm=args.mean_annual_precip_mm if args.mean_annual_precip_mm is not None else site_data.get('mean_annual_precip_mm', site_data.get('MAP')),
+            precip_reference=args.precip_reference or site_data.get('precipitation_reference')):
         print("Failed to convert ERA5 data", file=sys.stderr)
         sys.exit(1)
     era5_quality_report = None

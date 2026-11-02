@@ -57,6 +57,17 @@ values are failures. A missing December 31 in a non-leap year is a failure;
 unused day-366 padding is not. Missing/ambiguous unit metadata is reported;
 explicitly incompatible units and unsupported packed data fail.
 
+For selected hourly forcing years, it also recomputes annual/monthly/seasonal
+precipitation budgets using the shared `Tools/precipitation_quality.py` audit.
+Sourced site MAP stored by the forcing converter supports broad annual and
+multiyear plausibility screens. Missing climatology or measured precipitation
+validation produces explicit warnings; a valid hourly range is not a credible
+annual water budget. Partial years are not annualized. Stored tower comparison
+status is invalidated when the rainfall identity differs. These findings reach
+whole-case preflight without relying on a stale quality JSON. See
+[precipitation-budget review](../ameriflux-era5-to-ecosim/SKILL.md#mandatory-precipitation-budget-review)
+for reference provenance, thresholds and a read-only audit of older files.
+
 Also surface misspelled restart options and year-based stops capped by the
 forcing schedule. These findings do not imply that weather data caused every
 reported model failure.

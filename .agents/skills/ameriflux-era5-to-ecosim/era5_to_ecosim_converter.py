@@ -25,6 +25,7 @@ if PROJECT_ROOT not in sys.path:
 
 from Tools.climate_naming import finalize_climate_file_name
 from Tools.climate_quality import sanitize_era5_dataframe
+from Tools.precipitation_quality import precipitation_budget, rainfall_hash
 
 
 FILL_VALUE_THRESHOLD = 1.0e29
@@ -679,8 +680,9 @@ def compare_forcing_with_in_situ(netcdf_file, in_situ_file, min_pairs=DEFAULT_CO
 
         report["variables"][variable] = variable_report
 
+    report['unverified_variables'] = [name for name, item in report['variables'].items() if item['status'] != 'compared']
     if sufficient_variables:
-        report["status"] = "compared"
+        report["status"] = "partially_compared" if report['unverified_variables'] else "compared"
     elif compared_variables:
         report["status"] = "insufficient_data"
         report["reason"] = "Overlapping measured records did not meet the paired-hour minimum."
@@ -702,6 +704,8 @@ def convert_era5_to_ecosim(
     utc_offset_hours=None,
     time_registration="auto",
     time_shift_hours=None,
+    mean_annual_precip_mm=None,
+    precip_reference=None,
 ):
     """
     Convert ERA5 half-hourly data to ECOSIM hourly format.
@@ -717,6 +721,9 @@ def convert_era5_to_ecosim(
     time_shift_hours (float): Known ERA5 lag relative to the tower (hours);
         applied directly, overriding detection
     """
+
+    if mean_annual_precip_mm is not None and (not math.isfinite(float(mean_annual_precip_mm)) or float(mean_annual_precip_mm) <= 0 or not str(precip_reference or '').strip()):
+        raise ValueError('A positive site MAP and precipitation reference citation/path are required together')
 
     # Read the CSV data with dtype specification to avoid automatic conversion
     df = pd.read_csv(era5_file, dtype={'TIMESTAMP_START': str, 'TIMESTAMP_END': str})
@@ -795,7 +802,7 @@ def convert_era5_to_ecosim(
             print(f"In situ comparison incomplete: {comparison.get('reason', 'insufficient overlap')}")
         else:
             print(
-                f"Compared forcing with {comparison['in_situ_file']}; "
+                f"Tower validation {comparison['status']}: {comparison['in_situ_file']}; "
                 f"{len(comparison['warnings'])} large-difference warning(s)."
             )
         for warning in comparison["warnings"]:
@@ -808,8 +815,23 @@ def convert_era5_to_ecosim(
             "warnings": [],
         }
 
-    # Name the file by the forcing years it contains, e.g.
-    # US-UMB_ecosim_climate_1981-2021.nc. Intermediate files that do not end in
+    # Persist scientific validation metadata for later namelist-driven preflight.
+    rain_status = quality_report['in_situ_comparison'].get('variables', {}).get('RAINH', {}).get('status', 'unverified')
+    with Dataset(output_file, 'a') as dataset:
+        dataset.precip_tower_validation_status = rain_status
+        dataset.precip_tower_validation_rain_sha256 = rainfall_hash(dataset)
+        if mean_annual_precip_mm is not None:
+            dataset.precip_climatology_mm = float(mean_annual_precip_mm)
+            dataset.precip_climatology_source = str(precip_reference)
+    quality_report['precipitation_budget'] = precipitation_budget(output_file)
+    for finding in quality_report['precipitation_budget']['findings']:
+        print('WARNING: '+finding['message'], file=sys.stderr)
+    unverified = quality_report['in_situ_comparison'].get('unverified_variables', [])
+    if unverified:
+        print('WARNING: Tower comparison incomplete for: '+', '.join(unverified), file=sys.stderr)
+    quality_report['validation_status'] = 'review_required' if quality_report['precipitation_budget']['findings'] or unverified or quality_report['in_situ_comparison'].get('warnings') else 'screened'
+
+    # Name by forcing years (e.g. US-UMB_ecosim_climate_1981-2021.nc). Intermediate files that do not end in
     # .nc (such as the climate tool's *.nc.temp) are left for the caller to name.
     if str(output_file).endswith(".nc"):
         output_file = str(finalize_climate_file_name(output_file))
@@ -1074,6 +1096,8 @@ def main():
              'applied directly instead of detection',
     )
 
+    parser.add_argument('--mean-annual-precip-mm', type=float, help='Sourced site climatological precipitation, mm/year; not an automatic correction target')
+    parser.add_argument('--precip-reference', help='Citation, URL or evidence path for site precipitation climatology')
     args = parser.parse_args()
 
     if not os.path.exists(args.input):
@@ -1102,6 +1126,8 @@ def main():
         utc_offset_hours=args.utc_offset,
         time_registration=args.time_registration,
         time_shift_hours=args.time_shift_hours,
+        mean_annual_precip_mm=args.mean_annual_precip_mm if args.mean_annual_precip_mm is not None else site_data.get('mean_annual_precip_mm', site_data.get('MAP')),
+        precip_reference=args.precip_reference or site_data.get('precipitation_reference'),
     )
     print("Conversion completed successfully!")
 

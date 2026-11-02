@@ -1,6 +1,6 @@
 ---
 name: ameriflux-era5-to-ecosim
-description: Convert AmeriFlux ERA5 half-hourly meteorological CSV files into EcoSIM hourly climate forcing NetCDF files, compare generated forcing against overlapping measured tower meteorology when a FULLSET file is available, and report large biases or errors. Use when preparing or validating EcoSIM climate inputs for AmeriFlux sites, checking ERA5 against in situ records, diagnosing forcing discrepancies, or writing climate-quality reports. For non-AmeriFlux paper sites that need a fresh Copernicus CDS ERA5 point download by longitude/latitude, use era5-cds-point-download first.
+description: Convert AmeriFlux ERA5 half-hourly meteorological CSV files into EcoSIM hourly climate forcing NetCDF files, audit annual and seasonal precipitation budgets against sourced site climatology, compare generated forcing against overlapping measured tower meteorology, and report biases or unverified targets. Use when preparing or validating EcoSIM climate inputs for AmeriFlux sites, checking ERA5 against in situ records, diagnosing forcing discrepancies, or writing climate-quality reports. For non-AmeriFlux paper sites that need a fresh Copernicus CDS ERA5 point download by longitude/latitude, use era5-cds-point-download first.
 ---
 
 # AmeriFlux ERA5 to EcoSIM Converter
@@ -119,6 +119,75 @@ Use these broad operational warning screens:
 | `PATM` | absolute mean bias > 2 kPa or RMSE > 4 kPa |
 
 Treat these as failure-detection screens, not universal ERA5 performance criteria. A warning requires diagnosis of units, timestamp convention, accumulation interval, source-product processing, and representativeness. Never apply an automatic multiplicative correction from these metrics. If no suitable observations are found, record `not_available` in the quality report rather than treating the comparison as passed.
+
+## Mandatory precipitation-budget review
+
+Run the budget audit on the written NetCDF even when every hourly value passes
+range checks or measured tower precipitation is unavailable. The converter now
+uses `Tools/precipitation_quality.py` to report each year's valid-hour count,
+calendar-complete annual total, monthly totals and calendar-year seasonal sums
+(DJF uses January/February/December of that year). Exclude day-366 padding in
+non-leap years. Partial years remain partial; never extrapolate their sum.
+Climate precipitation excludes irrigation, which needs a separate water budget.
+
+Obtain site mean annual precipitation (MAP) and its source from the site page,
+local metadata or field literature. New site extraction retains optional
+`mean_annual_precip_mm` and `precipitation_reference`; older cached metadata may
+lack them. Do not infer MAP from the forcing under review. Record the reference
+period/uncertainty when known and state when it is unavailable. Supply a sourced
+value through `--mean-annual-precip-mm` and `--precip-reference` when metadata
+lack it. These options also work in `Tools/create_ecosim_climate_forcing.py`.
+The reference is retained in NetCDF global attributes for subsequent preflight.
+
+Broad review screens flag a complete year's total outside 0.1–3 times site MAP,
+and a mean of at least five complete years outside 0.5–2 times MAP. These are
+operational warnings, not universal climatic limits or evidence for a correction
+factor. Missing MAP explicitly leaves climatological plausibility **unverified**.
+Do not auto-rescale, interpolate away or clip an anomalous annual budget.
+Investigate accumulation units/cadence, upstream transformations, location and
+source representativeness; compare with an independent gauge or weather product.
+A source-to-output match validates conversion fidelity, not the source climate.
+
+Tower checks use measured QC support. If precipitation has zero/insufficient
+measured pairs (for example all `P_F_QC=2`), retain an explicit unverified
+precipitation finding. Successful checks on temperature or radiation do not
+make precipitation verified: the overall comparison is `partially_compared`
+when only some targets have sufficient observations. Reanalysis-filled tower
+rainfall cannot serve as an independent validation of reanalysis forcing.
+
+The quality report has separate `precipitation_budget`, per-variable tower
+status and `validation_status`. `review_required` and missing comparisons must
+remain prominent even when conversion exits successfully. The climate-readiness
+checker recomputes selected-year budgets from the actual NetCDF and propagates
+warnings through case preflight. It verifies the stored rainfall identity before
+reusing measured-comparison status. No sourced reference or no measured check
+means unverified, not a scientific pass; resolve material water-input conflicts
+before interpreting soil moisture or calibrating hydraulic conductivity.
+
+For existing input files, audit read-only without adding attributes or rewriting
+forcing:
+
+```bash
+python -m Tools.precipitation_quality /path/to/climate.nc \
+  --mean-annual-mm 790.37 \
+  --reference-source https://ameriflux.lbl.gov/sites/siteinfo/US-Ne1 \
+  --output /path/to/precipitation_budget.json
+```
+
+The value above is a US-Ne1 example, not a default for other sites. On the
+2026-11-01 US-Ne1 review, all 44 forcing years had large totals (mean about
+3,125 mm/year versus site MAP about 790 mm). Tower rain was unavailable, so
+previous measured-bias warnings never ran despite all hourly values passing
+range checks. Retain this failure mode in regression coverage.
+
+Validation:
+
+```bash
+python -m unittest Tools.test_precipitation_quality
+python -m unittest discover -s .agents/skills/ameriflux-era5-to-ecosim -p 'test_converter.py'
+python -m unittest discover -s .agents/skills/ecosim-climate-readiness/tests
+python -m unittest Tools.test_case_preflight
+```
 
 ## Usage
 To execute the skill, run the following command from the project root. The resulting JSON will be saved to the `./result/` directory:
