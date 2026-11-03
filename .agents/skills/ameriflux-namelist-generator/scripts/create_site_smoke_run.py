@@ -44,6 +44,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from Tools.run_progress import update_progress  # noqa: E402
+from Tools.case_preflight import enforce as enforce_preflight, PreflightError  # noqa: E402
 
 TRAIT_CHECKER = PROJECT_ROOT / ".agents" / "skills" / "ecosim-plant-trait-sanity-check" / "scripts" / "check_plant_trait_desc.py"
 HISTORY_CHECKER = ECOSIM_ROOT / ".agents" / "skills" / "ecosim-smoke-run" / "scripts" / "check_history.py"
@@ -150,23 +151,38 @@ def check_traits(smoke_dir: Path, site: str, case: str, evidence: Optional[Path]
     descs = sorted(smoke_dir.glob(f"{case}.plant_trait.desc.*"))
     if not descs:
         return {"status": "missing", "detail": f"No {case}.plant_trait.desc.* written by the smoke run"}
-    desc = descs[0]
-    base = [sys.executable, str(TRAIT_CHECKER), str(desc), "--strict-physiology"]
-    if evidence:
-        base += ["--web-evidence", str(evidence)]
+    reports = []
+    for desc in descs:
+        base = [sys.executable, str(TRAIT_CHECKER), str(desc), "--strict-physiology"]
+        if evidence:
+            base += ["--web-evidence", str(evidence)]
+        result = subprocess.run(base + ["--json"], capture_output=True, text=True)
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return {"status": "checker_failed", "detail": result.stderr.strip()[-500:], "desc_file": str(desc)}
+        reports.append(data)
+    # Rotation years may activate different crops. Keep every year's findings,
+    # including a later crop that does not occur in the first description file.
+    report = dict(reports[0])
+    report["source_files"] = [str(p) for p in descs]
+    report["findings"] = [finding for data in reports for finding in data.get("findings", [])]
+    report["plants"] = [plant for data in reports for plant in data.get("plants", [])]
+    report["finding_counts"] = {severity: sum(data.get("finding_counts", {}).get(severity, 0) for data in reports)
+                                for severity in ("ERROR", "WARN")}
+    report["total_blocks"] = sum(data.get("total_blocks", 0) for data in reports)
+    report["checked_blocks"] = sum(data.get("checked_blocks", 0) for data in reports)
     report_json = smoke_dir / f"{site}_plant_trait_check.json"
     report_md = smoke_dir / f"{site}_plant_trait_check.md"
-    result = subprocess.run(base + ["--json"], capture_output=True, text=True)
-    report_json.write_text(result.stdout)
-    report_md.write_text(subprocess.run(base, capture_output=True, text=True).stdout)
-    try:
-        report = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return {"status": "checker_failed", "detail": result.stderr.strip()[-500:], "desc_file": str(desc)}
-    counts = report.get("finding_counts", {})
+    report_json.write_text(json.dumps(report, indent=2) + "\n")
+    report_md.write_text("# Plant-trait review across smoke years\n\n" +
+                         "\n".join(f"- {f['severity']} {f.get('pft_code', '?')} {f['parameter']}: {f['message']}"
+                                   for f in report['findings']) + "\n")
+    counts = report["finding_counts"]
     return {
         "status": "errors" if counts.get("ERROR") else ("warnings" if counts.get("WARN") else "clean"),
-        "desc_file": str(desc),
+        "desc_file": str(descs[0]),
+        "desc_files": [str(p) for p in descs],
         "errors": counts.get("ERROR", 0),
         "warnings": counts.get("WARN", 0),
         "web_evidence": str(evidence) if evidence else None,
@@ -222,6 +238,12 @@ def smoke_round(args, site: str, site_root: Path, smoke_dir: Path, text: str, ca
     exe = find_executable(args.exe)
     if exe is None:
         raise FileNotFoundError("EcoSIM executable not found; build EcoSIM or pass --exe.")
+    production = site_root / 'run_dir' / f'{site}.namelist'
+    fresh = re.sub(r'^(\s*)continue_run\s*=.*$', r'\g<1>continue_run=.false.', text, flags=re.MULTILINE)
+    enforce_preflight(production, text=fresh, site_id=site,
+                      output=site_root / 'production.preflight.json')
+    enforce_preflight(smoke_dir / f'{site}.namelist', text=smoke_namelist(text, args.years),
+                      run_cwd=smoke_dir, site_id=site, output=site_root / 'smoke.preflight.json')
     smoke_dir.mkdir(parents=True, exist_ok=True)
     clear_outputs(smoke_dir, site)
     (smoke_dir / f"{site}.namelist").write_text(smoke_namelist(text, args.years))
@@ -328,7 +350,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         rounds = []
         try:
             summary = smoke_round(args, site, site_root, smoke_dir, run_namelist.read_text(), case)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, PreflightError) as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
         report(summary)
@@ -353,7 +375,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             if len(rounds) >= args.max_rounds:
                 break
             if changed:
-                summary = smoke_round(args, site, site_root, smoke_dir, run_namelist.read_text(), case)
+                try:
+                    summary = smoke_round(args, site, site_root, smoke_dir, run_namelist.read_text(), case)
+                except PreflightError as exc:
+                    print(f"ERROR: {exc}", file=sys.stderr)
+                    update_progress(site, args.result_dir)
+                    return 2
                 report(summary)
             # Unchanged parameters give an identical smoke run, so the next iteration only
             # re-plans (picking up any evidence added to the web-evidence file meanwhile).

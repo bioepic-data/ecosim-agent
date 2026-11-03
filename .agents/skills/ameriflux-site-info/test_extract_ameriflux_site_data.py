@@ -80,6 +80,21 @@ class SignParsingTests(unittest.TestCase):
         self.assertEqual(checks["longitude"], "matched")
 
 
+class PrecipitationMetadataTests(unittest.TestCase):
+    def test_sourced_optional_map_is_preserved(self):
+        text = page('US-Ne1', 'Mead', '41.1651, -96.4766', '361', 'Dfa', '10.07')
+        text += '\nMean Annual Precip. (mm):\n790.37\n'
+        raw = site.parse_site_metadata_from_text(text, 'US-Ne1', 'https://example.org/site')
+        data = site.raw_to_ecosim('US-Ne1', raw)
+        self.assertEqual(data['mean_annual_precip_mm'], 790.37)
+        self.assertEqual(data['precipitation_reference'], 'https://example.org/site')
+
+    def test_missing_precipitation_does_not_consume_other_field(self):
+        for lines in [['Mean Annual Precip. (mm)', 'NA', 'Mean Annual Temp', '10.07'],
+                      ['Mean Annual Precip. (mm)', 'Elevation(m)', '361']]:
+            self.assertIsNone(site.extract_precip_climatology(lines))
+
+
 class LocationValidationTests(unittest.TestCase):
     def test_correct_southern_site_passes(self):
         data = ecosim("BR-Npw", -16.498, -56.412, 24.9, "Aw", "northern Pantanal in central South America")

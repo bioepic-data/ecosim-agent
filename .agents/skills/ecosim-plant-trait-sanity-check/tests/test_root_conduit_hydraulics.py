@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import math
+import struct
 import sys
 import unittest
 from pathlib import Path
@@ -131,6 +133,54 @@ class RootConduitHydraulicsTests(unittest.TestCase):
         self.assertEqual(findings[0].severity, "ERROR")
         self.assertEqual(findings[0].parameter, "RVSR/RRAD2M")
         self.assertIn("expected at least one conduit", findings[0].message)
+
+    def test_us_ne1_radius_relationship_and_worked_limit(self):
+        findings = hydraulic_findings(
+            "maiz41", {"RRAD2M": 5e-5, "RVSR": 2.5e-5, "ARSRA": 2.0}
+        )
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, "ERROR")
+        self.assertIn("0.8 conduits", findings[0].message)
+        self.assertIn("RVSR <= sqrt(0.2)*RRAD2M = 2.23607e-05 m", findings[0].message)
+        self.assertIn("do not automatically change either radius", findings[0].message)
+
+    def test_one_conduit_boundary_accepts_float32_rounding_but_rejects_excess(self):
+        def single(value):
+            return struct.unpack('f', struct.pack('f', value))[0]
+        radius = 5e-5
+        limit = math.sqrt(.2) * radius
+        for vessel, expected in [(1.25e-5, False), (limit, False),
+                                 (single(limit), False), (limit * 1.0001, True)]:
+            with self.subTest(vessel=vessel):
+                findings = hydraulic_findings(
+                    "maiz41", {"RRAD2M": single(radius), "RVSR": vessel, "ARSRA": 2.0}
+                )
+                self.assertEqual(any(f.parameter == "RVSR/RRAD2M" for f in findings), expected)
+
+    def test_geometry_is_reported_for_pass_and_failure_without_universal_count_limit(self):
+        for vessel, expected in [(1.388889e-6, .2*(5e-5/1.388889e-6)**2),
+                                 (1.25e-5, 3.2), (2.5e-5, .8)]:
+            with self.subTest(vessel=vessel):
+                block = CHECKER.PlantBlock(nz=1, ny=1, nx=1, code="maiz41", start_line=1)
+                block.parameters = [parameter("RRAD2M", 5e-5, 1), parameter("RVSR", vessel, 2)]
+                summary = CHECKER.block_summary(block, [])
+                self.assertAlmostEqual(summary['implied_root_conduit_count'], expected)
+                self.assertAlmostEqual(summary['max_root_conduit_radius_for_one_m'], math.sqrt(.2)*5e-5)
+                self.assertEqual(summary['root_lumen_area_fraction'], .2)
+                rendered = CHECKER.render_markdown(Path('read_only.desc'), [block], [block], [], 1, 1, None, True)
+                self.assertIn('N_conduits', rendered)
+                self.assertIn('RVSR limit for N>=1', rendered)
+        # No root-class-specific evidence justifies a universal count ceiling.
+        self.assertEqual(hydraulic_findings(
+            "maiz41", {"RRAD2M": 5e-5, "RVSR": 1.388889e-6, "ARSRA": 2.0}), [])
+
+    def test_incomplete_or_invalid_geometry_has_no_derived_count(self):
+        for values in [{"RVSR": 1e-5}, {"RRAD2M": 5e-5},
+                       {"RRAD2M": 0, "RVSR": 1e-5},
+                       {"RRAD2M": 5e-5, "RVSR": float('nan')}]:
+            with self.subTest(values=values):
+                params = {k: [parameter(k, v, i)] for i, (k, v) in enumerate(values.items(), 1)}
+                self.assertIsNone(CHECKER.root_conduit_geometry(params)['implied_root_conduit_count'])
 
     def test_arsra_below_one_is_flagged(self):
         findings = hydraulic_findings(

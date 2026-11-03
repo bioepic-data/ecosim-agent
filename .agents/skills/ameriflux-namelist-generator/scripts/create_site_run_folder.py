@@ -33,6 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import create_ameriflux_namelist as namelist_generator  # noqa: E402
 from Tools.climate_naming import finalize_climate_file_name  # noqa: E402
 from Tools.run_progress import update_progress  # noqa: E402
+from Tools.case_preflight import enforce as enforce_preflight, PreflightError  # noqa: E402
 
 CLIMATE_YEAR_GLOB = "{site}_ecosim_climate_[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9].nc"
 
@@ -70,7 +71,8 @@ def collect_site_artifacts(site_root: Path, input_dir: Path) -> list[str]:
     moved = []
     for path in sorted(site_root.iterdir()):
         if (not path.is_file() or path.name.startswith(".")
-                or path.name in TRACKER_FILES or path.name == f"{site_root.name}.html"):
+                or path.name in TRACKER_FILES or path.name.endswith(".preflight.json")
+                or path.name == f"{site_root.name}.html"):
             continue
         target = input_dir / path.name
         if target.exists():
@@ -171,6 +173,8 @@ def assemble(argv: Optional[list[str]] = None) -> int:
     for option in ("--start-year", "--force-start-year", "--spinup-end-year", "--force-end-year",
                    "--spinup-cycles", "--regular-cycles", "--final-cycles", "--stop-n"):
         parser.add_argument(option, type=int)
+    parser.add_argument("--ecosystem-type", choices=("grassland", "cropland", "other"))
+    parser.add_argument("--observation-end-year", type=int)
     args = parser.parse_args(argv)
 
     repo_root = args.repo_root.resolve()
@@ -246,7 +250,8 @@ def assemble(argv: Optional[list[str]] = None) -> int:
     if args.case_name:
         generator_args += ["--case-name", args.case_name]
     for name in ("start_year", "force_start_year", "spinup_end_year", "force_end_year",
-                 "spinup_cycles", "regular_cycles", "final_cycles", "stop_n"):
+                 "spinup_cycles", "regular_cycles", "final_cycles", "stop_n",
+                 "ecosystem_type", "observation_end_year"):
         value = getattr(args, name)
         if value is not None:
             generator_args += [f"--{name.replace('_', '-')}", str(value)]
@@ -270,6 +275,12 @@ def assemble(argv: Optional[list[str]] = None) -> int:
         print("ERROR: run folder validation failed:", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
+        return 1
+
+    try:
+        enforce_preflight(namelist_file, site_id=site)
+    except PreflightError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
     print(f"Run folder: {site_root}")

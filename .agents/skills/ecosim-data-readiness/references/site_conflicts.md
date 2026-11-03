@@ -5,6 +5,11 @@ not establish that it belongs to the site.
 
 Before extracting or converting inputs:
 
+- For slope/aspect and inherited terrain/boundary values, read
+  [terrain_evidence.md](terrain_evidence.md). Check the source and spatial
+  support explicitly; slope bounds, template angles and matching runoff flags
+  do not independently establish site aspect.
+
 - Confirm site ID, signed coordinates, elevation, vegetation, climate class and
   source version. Recheck cached metadata against original extraction/sign
   evidence and site-filtered BIF records. Nearby sites and meteorological
@@ -94,6 +99,12 @@ workbooks, reports and the site guide together when changing values.
 
 ## Explain the findings
 
+For texture and organic-carbon comparisons or corrections, follow
+[`field_soil_evidence.md`](../../ameriflux-surgo-grid-extract/references/field_soil_evidence.md).
+It covers grouped BIF records, missing depths, mineral texture versus runtime
+fractions, SOC/OM conversions, stock support and boundary-layer effects. These
+checks require a numerical evidence review beyond the shared offline validator.
+
 Report what conflict the given inputs produce, not just that a validator failed.
 Group layer/date instances sharing a root cause; distinguish root-issue counts
 from the number of error instances. Preserve per-layer details in the JSON.
@@ -133,6 +144,18 @@ provide `conflict_type`, `explanation`, `consequence`, `resolution`, and numeric
 and expandable per-layer evidence. Refresh resolved findings too: show the
 previous value, correction, source bound and remaining assumptions. An adopted
 value within a field bound is a modeling choice, not an exact field measurement.
+
+### HTML warning and conflict titles
+
+In generated or refreshed HTML guides/reports, make the warning/conflict section
+title and its warning/conflict subsection headings visibly **red**. Apply a
+dedicated class to those titles, for example
+`.warning-conflict-title { color: #b91c1c; }` on a light background; choose a
+contrasting red for other themes. Apply the class to an expandable summary too
+when it serves as the section title. Keep body text readable in its normal color.
+Retain explicit warning/conflict and severity labels, including conditional or
+unverified status; color alone must not imply a confirmed error. Check that the
+rendered titles remain red after regeneration and existing heading styles.
 
 ## Reproducible numerical explanations
 

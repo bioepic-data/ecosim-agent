@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lange Climate Bias Adjustment"
+  short_description: "Apply and validate Lange bias adjustment for EcoSIM"
+  default_prompt: "Use $ecosim-lange-bias-adjustment to prepare and cross-validate tower-based climate bias correction for this EcoSIM site."

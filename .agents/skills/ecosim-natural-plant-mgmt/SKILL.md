@@ -13,11 +13,19 @@ Read `references/plant_mgmt_contract.md` when you need exact NetCDF dimensions, 
 
 ## Workflow
 
-1. Identify active PFTs for each topo unit and validate EcoSIM vegetation codes with `$ecosim-vegetation-code` against the active PFT parameter CDL.
+1. Before selecting PFTs for new or revised site vegetation data, deliberately
+   search site literature **and site modeling studies** for significant
+   nitrogen-fixing vegetation. Follow the required
+   [N-fixer evidence review](references/nitrogen_fixer_review.md), even when the
+   land-cover label or existing template contains only grass or non-fixing trees.
+   Record the evidence and the inclusion/omission decision; distinguish species
+   presence, ecological importance, measured fixation and model assumptions.
+   Then identify active PFTs for each topo unit and validate EcoSIM vegetation
+   codes with `$ecosim-vegetation-code` against the selected parameter table.
 2. Choose the editing path:
    - For an existing `.nc`, export to Excel, edit the workbook, then convert the edited workbook back to JSON or NetCDF.
    - For a new file, create either JSON directly or an Excel workbook matching the contract schema.
-3. Set `pft_dflag = 0` for constant natural vegetation unless year-specific PFT composition or management is needed. With `pft_dflag = 0`, EcoSIM uses record 1. With `pft_dflag = 1`, the selected `PlantInfoMod.F90` matches the forcing year (`yeari`) to the NetCDF `year` record.
+3. Set `pft_dflag = 0` for constant natural vegetation unless year-specific PFT composition or management is needed. With `pft_dflag = 0`, EcoSIM uses record 1. Store one reusable record (with a valid placeholder year for the JSON/Excel bridge), rather than duplicating it for each forcing year. This is constant management, not constant biomass, species shares, or an imposed ecosystem equilibrium. In the current reader, initial planting is read at initialization and management events are reread from record 1; subsequent annual regeneration is a model process. With `pft_dflag = 1`, the selected `PlantInfoMod.F90` matches the forcing year (`yeari`) to the NetCDF `year` record.
 4. Set each topo unit `NZ` to the active PFT count. Do not exceed `maxpfts = 5`; only the first `NZ` PFT entries matter.
 5. For each PFT, set `pft_type` to the validated six-character EcoSIM code. EcoSIM will use the first four characters plus the grid Koppen code when `KoppenClimZone_col > 0`, but keep the full validated code for clarity.
 6. For planting, use `DDMMYYYY = "01019999"` unless the user provides a site-specific date. Derive `Planting_population` as plants, shoots, tillers, or stems per square meter and `Planting_depth` in meters.

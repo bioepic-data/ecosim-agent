@@ -1,0 +1,4 @@
+interface:
+  display_name: "EcoSIM Evaluation Output Check"
+  short_description: "Verify comparison outputs with a one-year run"
+  default_prompt: "Use $ecosim-evaluation-output-check to inventory relevant observations and verify matching EcoSIM history outputs in an isolated one-year run."

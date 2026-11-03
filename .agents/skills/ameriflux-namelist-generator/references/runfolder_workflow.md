@@ -10,6 +10,12 @@ metadata, field records, source units and template assumptions. Assembly runs
 `Tools/driving_data_conflicts.py`, writes the site conflict report, and stops on
 errors. Warnings remain visible and do not establish full scientific readiness.
 
+The shared [mandatory case preflight](case_preflight.md) is enforced at assembly
+completion and before the two-year smoke test, one-year evaluation-output test,
+and every full/continued launch. It checks the actual selected namelist and
+inputs, with full production coverage checked before short runs. Resolve errors
+and unsupported inputs before proceeding; retain scientific warnings.
+
 Produce a run directory that contains or can resolve:
 
 - an EcoSIM executable or symlink if the user wants it placed in the folder
@@ -33,7 +39,13 @@ stage status from `result/<SITE_ID>/PROGRESS.md` when finishing or when asked.
 2. Use `ameriflux-atmchem-info` or `unified-ameriflux-extractor` to derive NADP/tDEP chemistry when climate chemistry variables are needed.
 3. Use `ameriflux-surgo-grid-extract` or `unified-ameriflux-extractor` to derive soil/grid profile values.
 4. Use `ameriflux-era5-to-ecosim` or `unified-ameriflux-extractor` to create hourly climate forcing.
-5. Use `ecosim-vegetation-code` to validate the EcoSIM PFT code from site vegetation and Koppen code.
+5. Before choosing vegetation PFTs, complete the mandatory
+   [N-fixer literature and modeling review](../../ecosim-natural-plant-mgmt/references/nitrogen_fixer_review.md).
+   Search for significant fixing species/components even when site metadata say
+   only grassland or forest. Record presence versus significance, field evidence
+   versus model assumptions, and the inclusion/omission decision in management
+   provenance and the HTML guide. Then use `ecosim-vegetation-code` to validate
+   PFT codes from site vegetation and Koppen code.
 6. Use `ecosim-natural-plant-mgmt` to create editable PFT-management Excel, JSON, and NetCDF files.
 7. Use `ecosim-soil-mgmt` to create editable soil-management Excel, JSON, and NetCDF files when fertilizer, tillage, irrigation, or other soil management is active.
 8. Use `ameriflux-namelist-generator` (`scripts/create_site_run_folder.py`) to assemble `result/<SITE_ID>/input/` and `result/<SITE_ID>/run_dir/` and write the namelist.
@@ -105,7 +117,7 @@ result/US-UMB/
               *_pft_mgmt.nc (and *_soil_mgmt.nc when active), Excel/JSON sidecars,
               *_ecosim_site.json, derivation and quality reports, logs, plus copies
               of the PFT parameter, atmospheric GHG, and microbial parameter NetCDF
-  run_dir/    US-UMB.namelist only; every input path is ../input/<file>
+  run_dir/    US-UMB.namelist and preflight report; inputs use ../input/<file>
 ```
 
 The extraction skills write their artifacts directly into `result/<SITE_ID>/`.
@@ -113,9 +125,49 @@ Assembling the run folder moves input artifacts into `input/`. The site HTML
 guide and tracker files remain at the site root. Copying the shared parameter files makes the
 folder self-contained and pins the parameter versions used by the case.
 
-Do not create `output/` or other files in `run_dir/`; EcoSIM writes its output
+Keep only configuration/preflight artifacts in `run_dir/` before launch; EcoSIM writes its output
 there when run. Link or copy an executable into `run_dir/` only when the user
 asks or gives its path; otherwise report the executable assumption.
+
+## Existing-case experiments and parameter identity
+
+Keep an existing case and its outputs intact when preparing a forcing or
+parameter experiment. Use a separate case name and run folder, and copy or
+explicitly pin the selected inputs. Reuse the working executable without a
+build investigation when the user has already established that it works.
+Honor whether the request is to prepare a run or execute it; smoke/output
+checks are distinct from launching the full production simulation.
+
+For a forcing-only comparison, retain the parent PFT parameters, management and
+soil values. Do not silently tune traits as part of the forcing change. Report
+inherited trait findings separately from execution/preflight status and follow
+the existing trait-review requirements before a full run. A successful smoke
+run and a failed trait check can coexist; neither result should hide the other.
+
+When the user names a PFT file, resolve that exact file before considering
+newest-file discovery or a site-named snapshot. Prefer preserving its dated
+basename in the isolated input copy and selecting it explicitly in
+`pft_file_in`. Record the requested source, actual selected path and SHA-256
+for both. Inspect the resulting namelist after helpers run: a helper's canonical
+site-copy name must not silently obscure the user's file choice. Distinguish
+"same values under a different filename" from a parameter correction.
+
+A path-only update with byte-identical inputs does not need another numerical
+simulation solely to repeat the same calculation. Refresh the current namelist,
+whole-case preflight, manifest, hashes, guide and tracker. Preserve old test
+reports and configuration paths as historical evidence, with an explicit
+identity/equivalence record linking them to the revised selection; do not
+rewrite old reports to imply they ran the new namelist. Changed parameter bytes,
+solver/output settings or forcing semantics need affected checks again.
+
+A forcing file's endpoint does not establish whole-case coverage. Limit the
+production chronology to jointly supported management and model-year GHG
+coverage unless an extension is explicitly prepared. Choose fresh initialization
+and spinup when the objective needs state developed under the new forcing;
+use a restart branch when inherited state is intentional and report its legacy
+forcing dependence. Refresh a preflight after changing chronology or inputs.
+Resolve executable paths absolutely before calling a helper that changes its
+working directory.
 
 ## Multiple Sites
 
@@ -207,11 +259,29 @@ and the chronology options `--force-start-year`, `--spinup-end-year`,
 `--force-end-year`, `--spinup-cycles`, `--regular-cycles`, `--final-cycles`,
 `--start-year`, `--stop-n`.
 
-Default chronology: spinup repeats the first four forcing years 18 times,
-`start_date` is the forcing start minus the spinup years, and `stop_n` equals
-EcoSIM's `get_sim_len`, i.e. the sum of (end - start + 1) x cycles over the
-`forc_periods` triples. For US-UMB (ERA5 1981-2021) that is start 1909 and
-`stop_n = 72 + 41 = 113`.
+Default chronology for **grasslands and croplands**: repeat the first five
+complete forcing years four times (20-year spinup), then run once from the
+first forcing year through the last year with available evaluation observations.
+Pass `--observation-end-year O` to assembly; land cover is read from staged
+`<SITE_ID>_ecosim_site.json` (`_raw.igbp_type`, `igbp_type`, or `IGBP`), or pass
+`--ecosystem-type grassland|cropland` explicitly. Verify the site classification
+before assembly, especially where cached metadata are missing or ambiguous.
+The generator requires the observation endpoint for these land covers and
+rejects inconsistent start years, durations, or cycle overrides.
+
+For forcing start `A`, set `start_date=(A-20)0101000000`,
+`forc_periods=A,A+4,4,A,O,1,A,O,0`, and `stop_n=20+(O-A+1)` years.
+Thus the last simulated year is `start_year + stop_n - 1 = O`.
+For US-Var with forcing beginning 1981 and observations ending 2021, this is
+start **1961**, periods `1981,1985,4,1981,2021,1,1981,2021,0`, and **61 years**.
+See the [chronology contract](namelist_contract.md#grassland-and-cropland-default)
+for endpoint evidence and input coverage requirements.
+
+Other ecosystem types retain the existing default: first four forcing years
+18 times (72-year spinup), followed by one transient period. For US-UMB with
+forcing 1981–2021 that is start 1909 and `stop_n=72+41=113`.
+Explicitly requested alternative experiments must document their chronology;
+do not silently apply those alternatives to new grassland/cropland cases.
 
 ## Site Explanation HTML
 
@@ -242,6 +312,12 @@ choices. Date historical descriptions and the page's status snapshot; do not
 infer current management from an older record. Identify units and distinguish
 calendar-year fertilizer totals from crop-season budgets. Describe missing
 information as unavailable rather than supplying unsupported values.
+
+Use visibly red titles for warning/conflict sections and their warning/conflict
+subheadings, including expandable section summaries. Follow the CSS and severity
+label guidance in
+`../../ecosim-data-readiness/references/site_conflicts.md` under "HTML warning
+and conflict titles" when creating or refreshing the guide.
 
 ### Document the selected grid
 
@@ -290,6 +366,14 @@ conflict status and chronology from files on disk. Keep historical benchmark
 comparisons labeled as snapshots. A documentation update does not authorize
 changing input values to make a conflict disappear.
 
+For field/BIF texture or organic-carbon overrides, also follow
+[`field_soil_evidence.md`](../../ameriflux-surgo-grid-extract/references/field_soil_evidence.md).
+Show the source record and missing metadata, the intended observation interval
+versus full changed layer support, and achieved stock where applicable. Refresh
+dependent porosity/water calculations as well as concentration tables. Preserve
+prior run results as historical and record that fresh initialization/spin-up
+verification is pending; earlier outputs do not validate the revised grid.
+
 Use inline CSS, semantic headings, readable tables, and a responsive layout so
 the page works offline without remote scripts or fonts. Add simple explanatory
 graphics where useful, labeling schematics and derived quantities. Verify local
@@ -298,6 +382,15 @@ refresh case status after validation or a requested simulation changes it.
 Preserve existing user-authored content when updating a guide.
 
 ## Smoke Run and Plant-Trait Evaluation
+
+For a case intended for model-data comparison, also follow
+[`ecosim-evaluation-output-check`](../../ecosim-evaluation-output-check/SKILL.md).
+Inventory the actual observations, request the matching registered fields and
+support variables, and verify them with a separate one-year run before committing
+to a full simulation. Carry the validated history selections into the production
+namelist without changing its chronology. Report output readiness separately
+from the two-year smoke/trait verdict and from scientific evaluation; do not
+silently omit observed targets that still lack a compatible model output.
 
 After the run folder is created, always run a 2-year smoke run and evaluate the
 plant traits it writes, before starting the full simulation:
@@ -333,6 +426,13 @@ python .agents/skills/ameriflux-namelist-generator/scripts/create_site_smoke_run
 
 The `.desc` file is read-only; corrections go to the PFT parameter NetCDF.
 A failed smoke run blocks the full run.
+
+Before describing the overall trait review as complete, require the
+[per-PFT evidence coverage audit](../../ecosim-plant-trait-sanity-check/references/evidence_coverage.md).
+Report deterministic/strict screening separately from literature support and
+unsearched groups, including radial/axial hydraulics and water relations.
+Zero findings against a sparse evidence file do not establish ecological
+validation. Preserve unresolved priors in the site guide with a red warning title.
 
 ### Correcting severe trait findings
 
@@ -391,6 +491,11 @@ and every unresolved finding. A full simulation made before the corrections
 does not reflect them and must be rerun.
 
 Report the remaining trait findings and corrections before starting the full run.
+
+Trait review must include every model-generated description from the smoke
+years. Rotating crops can change PFT between years; checking only the first
+`.desc` file misses later crops. The smoke helper aggregates all year reports
+for correction and readiness; retain individual crop evidence.
 
 ### Verify completion and year-transition compatibility
 

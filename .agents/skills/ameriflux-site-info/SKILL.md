@@ -42,6 +42,19 @@ Before using metadata for driving-data preparation, also follow
 field records and terrain/history with cached metadata and generated inputs.
 Location/sign checks alone do not validate soil, terrain or management defaults.
 
+For slope/aspect, follow the
+[terrain-evidence review](../ecosim-data-readiness/references/terrain_evidence.md).
+Preserve magnitude, direction, spatial support and unavailable evidence
+separately. A cached reference aspect is not established by a site's slope
+description or by the field being located east/west of another field.
+
+For a soil-preparation task, also inspect site-filtered BIF `GRP_SOIL_TEX` and
+`GRP_SOIL_CHEM` records. Preserve group associations, units evidence, depth/date
+and missing metadata for the soil workflow; the site-metadata extraction script
+does not perform this comparison. Route texture/carbon selection to
+[`field_soil_evidence.md`](../ameriflux-surgo-grid-extract/references/field_soil_evidence.md)
+before treating a mapped profile as representative of the field.
+
 AmeriFlux pages put each value on its own line under a label (`Lat, Long:` then `-16.4980, -56.4120`). Line cleanup must never strip a leading minus sign: an earlier version did, turning southern latitudes (BR-Npw, CL-SDF), sub-zero MAT (US-Brw -12.6, US-Prr -2), and below-sea-level elevation (US-Myb -4) positive. Every extraction is now cross-checked, and the result is stored in `_location_validation`:
 
 | Check | Evidence | On failure |
@@ -155,3 +168,12 @@ The script creates a JSON file named `result/<SITE_ID>/<site_name>_ecosim_site.j
   "IXTYP1": 10        # Vegetation type code
 }
 ```
+
+## Optional precipitation climatology
+
+When the site page provides mean annual precipitation, preserve it as
+`mean_annual_precip_mm` with `precipitation_reference` (the source URL/path).
+Do not substitute the forcing's own mean or infer a missing value from another
+metadata field. Older cached records may lack MAP; the forcing workflow must
+then obtain a sourced reference or report precipitation plausibility unverified.
+This field is a climatological comparison reference, not an annual rain target.

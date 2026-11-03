@@ -617,20 +617,13 @@ def check_class_information_conventions(block: PlantBlock, params: Dict[str, Lis
     if not block_is_annual(params):
         return
 
-    iwt_params = params.get("IWTYP", [])
-    if not iwt_params:
-        add(block, "WARN", "IWTYP", block.start_line, "annual plant is missing phenology type; EcoSIM treats annuals as evergreen")
-        return
-
-    for parameter in iwt_params:
-        if not raw_has_token(parameter, "evergreen") and 0.0 not in parameter.numeric_values:
-            add(
-                block,
-                "WARN",
-                "IWTYP",
-                parameter.line,
-                f"annual plant has phenology {parameter.raw_value!r}; EcoSIM convention treats all annual plants as evergreen",
-            )
+    # ISTYP describes life cycle, not management context. The active model
+    # supports self-seeding annual drought-deciduous vegetation explicitly;
+    # only human-seeded annual crops use the annual-evergreen convention.
+    # Check a crop-specific expectation through explicit site web evidence.
+    if not params.get("IWTYP"):
+        add(block, "WARN", "IWTYP", block.start_line,
+            "annual plant is missing phenology type; establish crop versus self-seeding context and climate-appropriate IWTYP")
 
 
 def block_is_annual(params: Dict[str, List[Parameter]]) -> bool:
@@ -1011,6 +1004,26 @@ def check_root_radial_hydraulics(block: PlantBlock, params: Dict[str, List[Param
             )
 
 
+def root_conduit_geometry(params: Dict[str, List[Parameter]]) -> Dict[str, Optional[float]]:
+    """Equal-conduit geometry used by the inspected StartqMod implementation."""
+    rvsr = first_value(params, "RVSR")
+    rrad2m = first_value(params, "RRAD2M")
+    valid_root = rrad2m is not None and math.isfinite(rrad2m) and rrad2m > 0
+    valid_vessel = rvsr is not None and math.isfinite(rvsr) and rvsr > 0
+    return {
+        "fine_root_radius_m": rrad2m,
+        "root_conduit_radius_m": rvsr,
+        "root_lumen_area_fraction": ROOT_LUMEN_AREA_FRACTION,
+        "implied_root_conduit_count": (
+            ROOT_LUMEN_AREA_FRACTION * (rrad2m / rvsr) ** 2
+            if valid_root and valid_vessel else None
+        ),
+        "max_root_conduit_radius_for_one_m": (
+            math.sqrt(ROOT_LUMEN_AREA_FRACTION) * rrad2m if valid_root else None
+        ),
+    }
+
+
 def check_root_conduit_hydraulics(block: PlantBlock, params: Dict[str, List[Parameter]], add) -> None:
     """Check literal root-conduit geometry and its axial-resistance correction."""
 
@@ -1036,10 +1049,11 @@ def check_root_conduit_hydraulics(block: PlantBlock, params: Dict[str, List[Para
                         "hydraulics",
                     )
 
-            rrad2m = first_value(params, "RRAD2M")
-            if rrad2m is not None and rrad2m > 0:
-                conduit_count = ROOT_LUMEN_AREA_FRACTION * (rrad2m / rvsr) ** 2
-                if conduit_count < 1.0:
+            geometry = root_conduit_geometry(params)
+            rrad2m = geometry["fine_root_radius_m"]
+            conduit_count = geometry["implied_root_conduit_count"]
+            if conduit_count is not None:
+                if conduit_count < 1.0 - PHYSIOLOGY_FLOAT_TOLERANCE:
                     add(
                         block,
                         "ERROR",
@@ -1047,7 +1061,11 @@ def check_root_conduit_hydraulics(block: PlantBlock, params: Dict[str, List[Para
                         rvsr_line,
                         f"RVSR {rvsr:g} m and RRAD2M {rrad2m:g} m imply only "
                         f"{conduit_count:g} conduits in EcoSIM's {ROOT_LUMEN_AREA_FRACTION:g} lumen-area fraction; "
-                        "expected at least one conduit",
+                        "expected at least one conduit: N = 0.2*(RRAD2M/RVSR)^2 >= 1, "
+                        f"requiring RVSR <= sqrt(0.2)*RRAD2M = {geometry['max_root_conduit_radius_for_one_m']:g} m "
+                        f"({geometry['max_root_conduit_radius_for_one_m'] * 1e6:g} um). "
+                        "Review root class, conduit anatomy and the fixed lumen-area assumption jointly; "
+                        "do not automatically change either radius to satisfy this bound",
                         "hydraulics",
                     )
 
@@ -1600,11 +1618,6 @@ def check_web_categorical(block: PlantBlock, params: Dict[str, List[Parameter]],
     for parameter in matching_params:
         raw = parameter.raw_value.strip()
         raw_lower = raw.lower()
-        if variable == "IWTYP" and block_is_annual(params):
-            allowed_values = [value for value in allowed_values if value == "0" or "evergreen" in value]
-            contains_values = [
-                value for value in contains_values if value.strip() == "0" or "evergreen" in value.lower()
-            ]
         if allowed_values and raw_lower not in allowed_values:
             add(
                 block,
@@ -1668,7 +1681,8 @@ def block_summary(block: PlantBlock, findings: List[Finding]) -> Dict[str, objec
         for f in findings
         if f.pft_code == block.code and f.nz == block.nz and f.ny == block.ny and f.nx == block.nx
     ]
-    rsrr = first_value(by_var(block), "RSRR")
+    params = by_var(block)
+    rsrr = first_value(params, "RSRR")
     radial_conductivity = (
         1.0 / (SECONDS_PER_HOUR * rsrr)
         if rsrr is not None and rsrr > 0
@@ -1687,6 +1701,7 @@ def block_summary(block: PlantBlock, findings: List[Finding]) -> Dict[str, objec
         "section_count": len(block.sections),
         "rsrr_mpa_h_per_m": rsrr,
         "root_radial_conductivity_m_per_s_mpa": radial_conductivity,
+        **root_conduit_geometry(params),
         "errors": sum(1 for f in block_findings if f.severity == "ERROR"),
         "warnings": sum(1 for f in block_findings if f.severity == "WARN"),
     }
@@ -1737,10 +1752,19 @@ def render_markdown(
                 f", RSRR {summary['rsrr_mpa_h_per_m']:g} MPa h m-1 -> "
                 f"k_radial {summary['root_radial_conductivity_m_per_s_mpa']:.3g} m s-1 MPa-1"
             )
+        conduit_summary = ""
+        if summary["implied_root_conduit_count"] is not None:
+            conduit_summary = (
+                f", RRAD2M {summary['fine_root_radius_m']:g} m, "
+                f"RVSR {summary['root_conduit_radius_m']:g} m -> "
+                f"N_conduits {summary['implied_root_conduit_count']:.4g} "
+                f"(assumed lumen fraction {summary['root_lumen_area_fraction']:g}), "
+                f"RVSR limit for N>=1 {summary['max_root_conduit_radius_for_one_m']:.6g} m"
+            )
         lines.append(
             f"- `{block.label}`{name}: {summary['parameter_count']} parameters, "
             f"{summary['section_count']} sections, {summary['errors']} ERROR, {summary['warnings']} WARN"
-            f"{rsrr_summary}"
+            f"{rsrr_summary}{conduit_summary}"
         )
 
     return "\n".join(lines) + "\n"

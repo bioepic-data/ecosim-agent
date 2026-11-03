@@ -41,6 +41,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import create_site_smoke_run as smoke  # noqa: E402  (shared executable, nstep, and history helpers)
 from Tools.run_progress import update_progress  # noqa: E402
+from Tools.case_preflight import enforce as enforce_preflight, PreflightError  # noqa: E402
 
 RESTART_DATE = re.compile(r"\.ecosim\.r\.(\d{4})-(\d{2})-(\d{2})")
 LOG_TAIL_LINES = 25
@@ -93,6 +94,7 @@ def end_restart_exists(run_dir: Path, start_year: int, stop_n: int) -> bool:
 
 
 def run_once(exe: Path, run_dir: Path, namelist: str, log_name: str) -> Dict[str, Any]:
+    enforce_preflight(run_dir / namelist)
     started = time.time()
     log_path = run_dir / log_name
     with open(log_path, "w") as log:
@@ -151,6 +153,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     text = namelist_path.read_text()
+    fresh_text = set_continue_run(text, False)
+    try:
+        enforce_preflight(namelist_path, text=fresh_text, site_id=site)
+    except PreflightError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
     start_year = smoke.start_year(text)
     stop_n = int(namelist_setting(text, "stop_n") or 0)
     stop_option = namelist_setting(text, "stop_option") or "nyears"
@@ -181,7 +190,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         elif done >= stop_n:
             summary["continue_skipped"] = f"restart {restart.name} already at the planned end"
         else:
-            namelist_path.write_text(set_continue_run(text, True))
+            continued_text = set_continue_run(text, True)
+            try:
+                enforce_preflight(namelist_path, text=continued_text, site_id=site,
+                                  output=run_dir / 'continue.preflight.json')
+            except PreflightError as exc:
+                summary['continue_skipped'] = str(exc)
+                (run_dir / 'full_run_summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 2
+            namelist_path.write_text(continued_text)
             hours_done = smoke.expected_nstep(start_year, done)
             print(f"  continuing from {restart.name} with continue_run=.true. ({done} year(s) done)")
             again = run_once(exe, run_dir, namelist_path.name, f"{site}.continue.log")

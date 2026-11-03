@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import re
@@ -42,7 +43,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--force-start-year", type=int, help="First climate forcing year")
     parser.add_argument("--spinup-end-year", type=int, help="Last climate forcing year used for spinup")
     parser.add_argument("--force-end-year", type=int, help="Last climate forcing year")
-    parser.add_argument("--spinup-cycles", type=int, default=18)
+    parser.add_argument("--ecosystem-type", choices=("grassland", "cropland", "other"),
+                        help="Land cover; otherwise read igbp_type from staged site JSON")
+    parser.add_argument("--observation-end-year", type=int,
+                        help="Verified last observation year; required for grassland/cropland")
+    parser.add_argument("--spinup-cycles", type=int)
     parser.add_argument("--regular-cycles", type=int, default=1)
     parser.add_argument("--final-cycles", type=int, default=0)
     parser.add_argument("--stop-n", type=int, help="ecosim_time stop_n; default spinup years plus regular/final forcing years")
@@ -83,20 +88,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 2
 
     force_start, force_end = resolve_forcing_years(args, climate_file, repo_root)
-    spinup_end = args.spinup_end_year or min(force_end, force_start + 3)
-    # Spinup cycles run before the regular forcing period, so by default the
-    # simulation starts that many years before force_start and stop_n covers
-    # spinup plus the regular (and final) periods. A stop_n of only
-    # force_end - start + 1 would end the run inside spinup.
-    spinup_years = (spinup_end - force_start + 1) * args.spinup_cycles
-    regular_years = (force_end - force_start + 1) * (args.regular_cycles + args.final_cycles)
-    start_year = args.start_year or force_start - spinup_years
-    stop_n = args.stop_n or max(1, spinup_years + regular_years)
-    forc_periods = (
-        f"{force_start},{spinup_end},{args.spinup_cycles},"
-        f"{force_start},{force_end},{args.regular_cycles},"
-        f"{force_start},{force_end},{args.final_cycles}"
-    )
+    ecosystem = args.ecosystem_type or infer_ecosystem_type(
+        args.site_id, (grid_file.parent, climate_file.parent,
+                       repo_root / "result" / args.site_id / "input",
+                       repo_root / "result" / args.site_id))
+    start_year, stop_n, forc_periods = resolve_chronology(args, force_start, force_end, ecosystem)
 
     relative_base = args.run_dir.resolve() if args.run_dir else None
     context = {
@@ -148,6 +144,48 @@ def main(argv: Optional[list[str]] = None) -> int:
     return 0
 
 
+def infer_ecosystem_type(site_id: str, directories: Iterable[Path]) -> str:
+    """Use land-cover metadata, never IXTYP1 (a litter flag)."""
+    for directory in dict.fromkeys(directories):
+        path = directory / f"{site_id}_ecosim_site.json"
+        if not path.exists():
+            continue
+        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = data.get("_raw", {})
+        code = str(raw.get("igbp_type") or data.get("igbp_type") or data.get("IGBP") or "").strip().upper()
+        if code in ("GRA", "GRASSLAND", "GRASSLANDS"):
+            return "grassland"
+        if code in ("CRO", "CROPLAND", "CROPLANDS"):
+            return "cropland"
+    return "other"
+
+
+def resolve_chronology(args: argparse.Namespace, first: int, available_last: int,
+                       ecosystem: str) -> tuple[int, int, str]:
+    """Derive a calendar-aligned spinup plus transient forcing plan."""
+    short_spinup = ecosystem in ("grassland", "cropland")
+    last = args.observation_end_year if args.observation_end_year is not None else available_last
+    if short_spinup and args.observation_end_year is None:
+        raise SystemExit("ERROR: grassland/cropland requires --observation-end-year from verified observation coverage")
+    if not first <= last <= available_last:
+        raise SystemExit("ERROR: observation endpoint must be within available/selected forcing years; extend inputs first")
+    spinup_end = args.spinup_end_year if args.spinup_end_year is not None else min(available_last, first + (4 if short_spinup else 3))
+    cycles = args.spinup_cycles if args.spinup_cycles is not None else (4 if short_spinup else 18)
+    if not first <= spinup_end <= available_last or min(cycles, args.regular_cycles, args.final_cycles) < 0:
+        raise SystemExit("ERROR: invalid spinup window or negative forcing cycle count")
+    if short_spinup and (spinup_end != first + 4 or cycles != 4 or
+                         args.regular_cycles != 1 or args.final_cycles != 0):
+        raise SystemExit("ERROR: grassland/cropland requires five complete forcing years x four cycles, then one transient period")
+    spinup_years = (spinup_end - first + 1) * cycles
+    duration = spinup_years + (last - first + 1) * (args.regular_cycles + args.final_cycles)
+    start = first - spinup_years if args.start_year is None else args.start_year
+    stop = max(1, duration) if args.stop_n is None else args.stop_n
+    if short_spinup and (start != first - 20 or stop != duration or start + stop - 1 != last):
+        raise SystemExit("ERROR: start-year and stop-n must match the 20-year spinup plus transient through the observation endpoint")
+    periods = f"{first},{spinup_end},{cycles},{first},{last},{args.regular_cycles},{first},{last},{args.final_cycles}"
+    return start, stop, periods
+
+
 def discover_site_file(repo_root: Path, site_id: str, tokens: tuple[str, ...], suffixes: tuple[str, ...]) -> Optional[Path]:
     search_roots = [
         repo_root / "result" / site_id / "input",
@@ -185,6 +223,8 @@ def resolve_forcing_years(args: argparse.Namespace, climate_file: Path, repo_roo
     force_end = args.force_end_year or (inferred[1] if inferred else None)
     if force_start is None or force_end is None:
         raise SystemExit("ERROR: could not infer climate forcing years; pass --force-start-year and --force-end-year")
+    if inferred and (force_start < inferred[0] or force_end > inferred[1]):
+        raise SystemExit("ERROR: selected forcing years exceed the available climate range")
     if force_end < force_start:
         raise SystemExit("ERROR: force-end-year must be >= force-start-year")
     return force_start, force_end

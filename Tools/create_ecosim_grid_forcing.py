@@ -499,6 +499,9 @@ def create_grid_netcdf(site_data, soil_data, template_path, output_file):
     aspx.long_name = "Aspect angle in compass heading convention"
     aspx.units = "degrees clockwise from north"
     aspx[:] = [90.0]
+    aspx.source = 'template_default_unverified'
+    aspx.assumption = ('East-facing placeholder; not extracted from site terrain. '
+                       'Review site evidence or DEM and runoff boundaries before scientific use.')
 
     sl0 = ds.createVariable('SL0', 'f4', ('ntopou',))
     sl0.long_name = "Slope"

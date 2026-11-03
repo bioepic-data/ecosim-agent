@@ -135,6 +135,39 @@ class ConverterComparisonTests(unittest.TestCase):
             {warning["variable"] for warning in report["in_situ_comparison"]["warnings"]},
         )
 
+    def test_complete_year_budget_and_reference_are_persisted(self):
+        from netCDF4 import Dataset
+        era_file, tower_file = self.write_inputs()
+        timestamps = pd.date_range('2001-01-01', '2001-12-31 23:30', freq='30min')
+        for path in [era_file, tower_file]:
+            template = pd.read_csv(path)
+            data = template.iloc[np.arange(len(timestamps)) % len(template)].reset_index(drop=True)
+            data['TIMESTAMP_START'] = timestamps.strftime('%Y%m%d%H%M')
+            data['TIMESTAMP_END'] = (timestamps+pd.Timedelta(minutes=30)).strftime('%Y%m%d%H%M')
+            data['P_ERA' if path==era_file else 'P_F'] = .2
+            data.to_csv(path,index=False)
+        report = converter.convert_era5_to_ecosim(str(era_file), str(self.root/'annual.nc'), -121.5,
+            in_situ_file=str(tower_file), mean_annual_precip_mm=790.37,
+            precip_reference='test climatology', time_registration='off')
+        codes = [r['code'] for r in report['precipitation_budget']['findings']]
+        self.assertIn('precipitation_annual_climatology_mismatch', codes)
+        self.assertEqual(report['validation_status'], 'review_required')
+        with Dataset(report['output_file']) as ds:
+            self.assertEqual(ds.precip_climatology_mm, 790.37)
+            self.assertEqual(ds.precip_climatology_source, 'test climatology')
+        self.assertEqual(report['precipitation_budget']['measured_tower_validation_status'], 'compared')
+
+    def test_missing_measured_rain_keeps_comparison_incomplete(self):
+        era, tower = self.write_inputs()
+        data = pd.read_csv(tower); data['P_F_QC'] = 2; data.to_csv(tower, index=False)
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):report, persisted = self.convert(era, 'missing_rain.nc', tower)
+        self.assertEqual(report['in_situ_comparison']['status'], 'partially_compared')
+        self.assertIn('RAINH', report['in_situ_comparison']['unverified_variables'])
+        self.assertEqual(persisted['validation_status'], 'review_required')
+        self.assertIn('precipitation_tower_unverified', [x['code'] for x in report['precipitation_budget']['findings']])
+        self.assertIn('RAINH', stderr.getvalue())
+
     def test_dwpth_is_vapor_pressure_not_deficit(self):
         era_file, fullset_file = self.write_inputs()
         report, _ = self.convert(era_file, "vapor.nc", fullset_file)

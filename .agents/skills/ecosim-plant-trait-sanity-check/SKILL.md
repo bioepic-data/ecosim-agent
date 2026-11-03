@@ -38,7 +38,10 @@ python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait
 ```
 
 4. For a site run, first extract the site vegetation and site trait measurements (`scripts/site_vegetation.py extract`, then `site-evidence`), and target the searches at the site's dominant species (see [references/web_evidence.md](references/web_evidence.md), Site Vegetation First). Use web search to gather trait evidence for each first-grid plant block. Read [references/web_evidence.md](references/web_evidence.md), then search for the plant name, likely taxon, or functional type plus trait terms. For `ndlf35`, `woak35`, US-Me2, or US-xSP/SOAP work, also read [references/pft_case_notes.md](references/pft_case_notes.md). Before attributing low GPP or poor phenology to a trait, read the growth-stoichiometry, `PTSHT`, `ZTYPI`, and perennial-grass floral-initiation sections of [references/sanity_rules.md](references/sanity_rules.md).
-5. Convert the evidence into EcoSIM units and save a temporary evidence JSON file. Use species-level evidence when available; otherwise use genus, family, or functional-type evidence and mark that evidence level.
+5. Maintain the mandatory [evidence coverage audit](references/evidence_coverage.md)
+   for every reviewed PFT and relevant trait group. Record the actual search and
+   its outcome, including groups not searched; a clean checker cannot establish
+   review completeness. Convert the evidence into EcoSIM units and save a persistent site evidence JSON file. Use species-level evidence when available; otherwise use genus, family, or functional-type evidence and mark that evidence level.
    Combine per-species values by canopy share (`site_vegetation.py weight`) and run `site_vegetation.py lint`.
 6. Re-run the checker with the evidence file:
 
@@ -47,7 +50,14 @@ python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait
 ```
 
 7. Report findings by severity. Lead with `ERROR` findings, then `WARN` findings, and include the plant code, grid tuple, parameter name, source line, and web source when applicable.
-8. If there are no findings, state that the first-grid plant blocks passed both deterministic and web-informed checks and mention how many plants and parameters were inspected.
+8. Report two separate verdicts: **parameter screening** and **literature-review
+   coverage**. With zero findings, say only that the selected blocks passed the
+   implemented screens and supplied evidence comparisons. State which trait
+   groups have applicable evidence, which rely on provisional/model/user priors,
+   and which remain unsearched or unresolved. Do not say all traits are supported,
+   ecologically validated, or comprehensively reviewed unless the coverage audit
+   supports that claim. A five-day read-back of one parameter does not complete
+   the site's broader trait review; retain that limited scope.
 
 ## What Is Checked
 
@@ -70,11 +80,11 @@ The checker validates the plant blocks at the selected grid for:
 - osmotic potential sign and standing dead biomass sign
 - growth yield bounds
 - N and P concentration magnitudes
-- class-information conventions, including that annual plants are treated as evergreen in EcoSIM
+- class-information conventions: the annual-evergreen setting applies to annual crop plants, not all annual vegetation
 - woody versus herbaceous root trait consistency
 - cross-parameter checks such as `PhiMIN <= PhiMAX` and fine-root radius not exceeding primary-root radius
 - `RSRR` radial root resistivity, its implied fully wetted conductivity, and its interaction with soil drying and total root resistance
-- literal `RVSR` conduit radius, conifer tracheid anatomy, conduit geometry relative to `RRAD2M`, and `ARSRA` resistance correction
+- literal `RVSR` conduit radius, conifer tracheid anatomy, implied conduit count `N=0.2*(RRAD2M/RVSR)^2 >= 1` (equivalently `RVSR <= sqrt(0.2)*RRAD2M`), and `ARSRA` resistance correction
 
 Read [references/sanity_rules.md](references/sanity_rules.md) before expanding the checker or interpreting a borderline warning. Read [references/web_evidence.md](references/web_evidence.md) before making web-informed trait comparisons. Use [references/pft_case_notes.md](references/pft_case_notes.md) for retained project evidence and interpretation caveats for previously studied PFT/site combinations.
 
@@ -119,11 +129,13 @@ Use this JSON shape:
 }
 ```
 
-Web evidence findings default to `WARN` because literature and trait database ranges vary with species, site, phenology, and measurement protocol. Use `severity: "ERROR"` in the evidence JSON only when a value is unequivocally impossible or contradicts a required categorical identity. Do not use external deciduous foliage descriptions to override the EcoSIM convention that annual plants are represented as evergreen in `IWTYP`.
+Web evidence findings default to `WARN` because literature and trait database ranges vary with species, site, phenology, and measurement protocol. Use `severity: "ERROR"` in the evidence JSON only when a value is unequivocally impossible or contradicts a required categorical identity. The `IWTYP=0` annual-evergreen convention applies to **annual crop plants seeded by humans**. It does not apply universally to self-seeding annual grassland or legumes. `ISTYP` controls annual/perennial life cycle separately from `IWTYP`, which selects climate-responsive phenology. For self-seeding annuals, select `IWTYP` according to the site's climate and the active reader/process implementation; drought-deciduous `IWTYP=2` is supported. See `PlantPhenolMod.F90` near `CropPhenoChk` and the explicit annual drought-deciduous branches. Do not classify management context from the PFT name alone: `clva` can represent a natural annual clover. A `.desc` file alone cannot establish human seeding; record verified crop context in the site evidence and use an explicit categorical `IWTYP` expectation when applicable. Do not change natural annuals to evergreen merely to silence a checker warning.
 
 For photosynthetic-property checks, interpret `RUBP`, `PEPC`, and `CHL` as fractions of the same total leaf-protein pool. Derive that pool from the smaller of the N- and P-supported amounts in active leaf structural biomass. All leaf structure is active; all non-tree root structure is active; for trees, apply root protein relationships only to active structural root biomass and exclude lignified heartwood. Separate `CNRTLIG` and `CPRTLIG` trait inputs are not required. Check `SLA1` only as an independently evidenced morphological trait. Do not use `SLA1` to back-calculate leaf-area `Vcmax`, `Jmax`, or other photosynthetic capacities unless the model mapping and all required conversions are explicitly supported.
 
 Interpret `RVSR` as the literal arithmetic mean lumen radius of root water conduits: tracheids for conifers and vessel elements for angiosperms. Do not use an effective hydraulic radius or tune `RVSR` to absorb pit and end-wall resistance; use `ARSRA` for that correction. Convert published conduit diameters to radius in meters before adding web evidence.
+
+Always report `RRAD2M`, `RVSR`, the implied conduit count and the maximum vessel radius for at least one conduit, including when the geometry passes. The 20% lumen fraction and equal-conduit representation are model assumptions, not universal anatomy. Passing this bound does not validate the count or radii; review them jointly against the represented root class. See [Root Conduit Hydraulics](references/sanity_rules.md#root-conduit-hydraulics) for the worked check. Do not automatically adjust either radius or impose a universal vessel-count range.
 
 Interpret `RSRR` as radial root resistivity per unit root surface area in `MPa h m-1`, not as conductivity. Convert it to the fully wetted intrinsic radial conductivity with `k_radial = 1/(3600*RSRR)` in `m s-1 MPa-1`. High `RSRR` means low radial conductivity. Review it separately from `RVSR` and `ARSRA`, which control axial transport, and remember that EcoSIM further increases radial resistance as the soil micropore water fraction declines.
 
@@ -184,6 +196,11 @@ python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait
 The script returns a nonzero status when `ERROR` findings are present or when no blocks match the requested grid. With `--strict-physiology`, physiological-consistency warnings are promoted to `ERROR` except the model-formulation-sensitive `Jmax:Vcmax` diagnostic, which remains a lower-priority `WARN`. Unrelated ecological warnings also remain warnings.
 
 ## Reporting Guidance
+
+For seasonal physiology, realized traits, history-based diagnosis or parameter
+sensitivity comparisons, use
+[ecosim-plant-history-evaluation](../ecosim-plant-history-evaluation/SKILL.md).
+This checker supplies the static parameter checks for that evaluation.
 
 For iterative correction of an existing case through five-day runs and fresh
 trait read-back, use

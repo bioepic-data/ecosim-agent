@@ -66,6 +66,7 @@ FIELD_PATTERNS = {
     "latitude": (r"\bsite\s+latitude\b", r"\blatitude\b", r"\blat\b"),
     "longitude": (r"\bsite\s+longitude\b", r"\blongitude\b", r"\blong\b", r"\blon\b"),
     "elevation": (r"\belevation\b", r"\baltitude\b", r"\belev\b"),
+    "MAP": (r"\bmean\s+annual\s+precip(?:itation)?\b\.?",),
     "MAT": (
         r"\bmean\s+annual\s+(?:air\s+)?temperature\b",
         r"\bmean\s+annual\s+temp\b",
@@ -314,6 +315,23 @@ def extract_site_name(lines: Sequence[str], site_id: str) -> str:
     return site_id
 
 
+def extract_precip_climatology(lines: Sequence[str]) -> Optional[float]:
+    """Optional MAP without borrowing a number from the following metadata field."""
+    pattern = FIELD_PATTERNS['MAP'][0]
+    for index, line in enumerate(lines):
+        match = re.search(pattern, line, re.IGNORECASE)
+        if not match:
+            continue
+        tail = re.sub(r"\(mm\)", "", line[match.end():], flags=re.IGNORECASE).strip(' :|')
+        candidates = [tail] if tail else list(lines[index+1:index+2])
+        for value in candidates:
+            number = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)\s*(?:mm)?", value.strip(), re.IGNORECASE)
+            if number and 0 < float(number[1]) <= 15000:
+                return float(number[1])
+        return None
+    return None
+
+
 def parse_site_metadata_from_text(text: str, site_id: str, source: str) -> Optional[Dict[str, Any]]:
     lines = split_lines(text)
     if not lines:
@@ -327,6 +345,7 @@ def parse_site_metadata_from_text(text: str, site_id: str, source: str) -> Optio
         "longitude": lat_long[1] if lat_long else extract_float(lines, "longitude", -180.0, 180.0),
         "elevation": extract_float(lines, "elevation", -500.0, 9000.0),
         "MAT": extract_float(lines, "MAT", -90.0, 70.0),
+        "MAP": extract_precip_climatology(lines),
         "climate_code": extract_koppen_code(lines),
         "igbp_type": extract_igbp_type(lines),
         "description": description,
@@ -411,6 +430,7 @@ def raw_to_ecosim(site_id: str, raw: Dict[str, Any]) -> Dict[str, Any]:
         "ATCAG": float(raw["MAT"]),
         "IETYPG": KOPPEN_MAP[climate_code],
         "IXTYP1": map_vegetation(igbp_type),
+        **({'mean_annual_precip_mm': float(raw['MAP']), 'precipitation_reference': raw.get('source', '')} if raw.get('MAP') is not None else {}),
         "_raw": normalized_raw,
     }
 
