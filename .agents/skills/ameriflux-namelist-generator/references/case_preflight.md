@@ -41,13 +41,16 @@ The gate blocks on:
   layers and inactive PFT/event slots can contain padding.
 - Incompatible PFT table/management identifiers (including the grid Koppen
   override), active/event counts, malformed event strings, invalid dates,
-  harvest enums and fractions, or missing annual management records.
+  harvest enums and fractions, or missing annual management records. Constant plant management (`pft_dflag=0`)
+  is supported with one reusable year record; its year label need not cover the
+  forcing calendar. Bounds, PFT identifiers, planting strings and event counts
+  still pass the same checks.
 - Missing soil-management selector targets or malformed records; monthly GHG
   gaps/units or coverage missing **model years**, including spin-up, rather
   than merely the cycled weather years.
 
 Unsupported active climate-factor files, fixed-climate/warming modes,
-non-annual plant-management schemas, and explicit `restartFileFullPath`
+plant-management modes other than constant (0) or forcing-year annual (1), and explicit `restartFileFullPath`
 configurations block until a reader-specific validator is implemented. Extend
 and test the validator for an additional format/mode; do not add a skip flag or
 record an unsupported check as passed. Strict syntax is intentionally narrower

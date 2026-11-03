@@ -317,6 +317,11 @@ def assess(site_id, input_dir, grid=None, site_data=None, namelist=None):
                     if value and value[1].upper() != 'NO':
                         source = (path.parent / value[1]).resolve()
                         with nc.Dataset(source) as data:
+                            if field == 'pft_mgmt_in' and 'pft_dflag' in data.variables and int(data['pft_dflag'][...]) == 0:
+                                # Constant plant data replay record 1, not annual
+                                # forcing-year records (PlantInfoMod.F90).
+                                inputs[str(source)] = hashlib.sha256(source.read_bytes()).hexdigest()
+                                continue
                             if 'year' not in data.variables:
                                 finding('warning', 'coverage_unverified', f'{field}: no year variable.', source)
                                 continue

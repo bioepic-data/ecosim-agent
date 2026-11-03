@@ -444,7 +444,18 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
         bridge = module('.agents/skills/ecosim-natural-plant-mgmt/scripts/plant_mgmt_excel_bridge.py', 'case_plant')
         with nc.Dataset(selected['pft_mgmt_in']) as ds:
             require(ds, ['NZ', 'nmgnts', 'pft_type', 'pft_pltinfo', 'pft_mgmt', 'pft_dflag'])
-            years(ds, forcing_years)
+            if ds['pft_dflag'].ndim:
+                raise ValueError('pft_dflag must be scalar')
+            flag_value = float(checked_numbers(ds['pft_dflag']))
+            if flag_value not in (0, 1):
+                raise ValueError(f'pft_dflag={flag_value}: only constant (0) and forcing-year annual (1) management are validated')
+            flag = int(flag_value)
+            # PlantInfoMod reads record 1 for constant vegetation; its year label
+            # is not a coverage requirement. Keep one explicit record for bridge
+            # round trips rather than accepting unvalidated unused records.
+            years(ds, forcing_years if flag == 1 else [])
+            if flag == 0 and len(ds.dimensions['year']) != 1:
+                raise ValueError('Constant management must store exactly one reusable year record')
             bounds(ds, grid_bounds)
             for key, dims in {'NZ': ('ntopou',), 'nmgnts': ('year','ntopou','maxpfts'),
                               'pft_type': ('year','ntopou','maxpfts'),
@@ -464,9 +475,6 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
             for name, width in [('pft_type',10), ('pft_pltinfo',128), ('pft_mgmt',128)]:
                 if ds[name].dtype.kind != 'S' or ds[name].shape[-1] < width:
                     raise ValueError(f'{name}: model reads character strings of width {width}')
-            flag = int(checked_numbers(ds['pft_dflag']))
-            if flag != 1:
-                raise ValueError(f'pft_dflag={flag}: only annual management schema is validated by this workflow')
             nz = checked_numbers(ds['NZ'])
             if np.any(nz < 0) or np.any(nz > jp) or np.any(nz != nz.astype(int)):
                 raise ValueError('NZ exceeds PFT capacity or is not a nonnegative integer')
@@ -493,7 +501,7 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
                     for event in pft['mgmt']:
                         if event['iHarvType'] not in enum('iharvtyp_') or event['jHarvType'] not in enum('jharvtyp_'):
                             raise ValueError('Harvest code is not defined in ElmIDMod.F90')
-                        if datetime.strptime(event['DDMMYYYY'], '%d%m%Y').year != int(year):
+                        if flag == 1 and datetime.strptime(event['DDMMYYYY'], '%d%m%Y').year != int(year):
                             raise ValueError('Plant management event year differs from its selected annual record')
                         for key, value in event.items():
                             if 'Fraction' in key and not 0 <= value <= 1:

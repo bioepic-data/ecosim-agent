@@ -131,6 +131,16 @@ delta_time=3600.
         self.assertEqual(eco['hist_fincl1'],['ECO_LAI_col:A','ECO_GPP_col'])
         self.assertEqual(activation['added_to_hist_fincl1'],[])
 
+    def test_constant_plant_record_can_use_a_placeholder_year(self):
+        plant = self.root / 'constant.nc'
+        with nc.Dataset(plant, 'w') as ds:
+            ds.createDimension('year', 1)
+            ds.createVariable('year', 'i4', ('year',))[:] = [1999]
+            ds.createVariable('pft_dflag', 'i4')[...] = 0
+        self.namelist.write_text(self.namelist.read_text().replace("pft_mgmt_in='../original.nc'", "pft_mgmt_in='../constant.nc'"))
+        plan = self.prepare()
+        self.assertEqual(plan['year'], 2000)
+
     def test_missing_forcing_year_fails(self):
         self.data['year']=2002
         self.save_manifest()

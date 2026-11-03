@@ -157,6 +157,19 @@ class ConflictTests(unittest.TestCase):
         self.assertIn('duration_conflict', codes)
         self.assertIn('forcing_years_missing', codes)
 
+    def test_constant_management_record_is_not_a_forcing_coverage_gap(self):
+        data = self.directory / 'constant.nc'
+        with nc.Dataset(data, 'w') as ds:
+            ds.createDimension('year', 1)
+            ds.createVariable('year', 'i4', ('year',))[:] = [1999]
+            ds.createVariable('pft_dflag', 'i4')[...] = 0
+        namelist = self.directory / 'case.namelist'
+        namelist.write_text("start_date='20180101000000'\nstop_option='nyears'\n"
+                            "stop_n=2\nforc_periods=2018,2019,1\npft_mgmt_in='constant.nc'\n")
+        result = assess(SITE, self.directory, self.grid, namelist=namelist)
+        self.assertNotIn('forcing_years_missing', {f['code'] for f in result['findings']})
+        self.assertIn(str(data.resolve()), result['input_sha256'])
+
     def volume_case(self, fraction, corrected=False, water_corrected=False):
         profile = {'input': {'gdb': 'gSSURGO.gdb'},
                    'volume_basis': {'BKDSI': 'fine_earth_bulk', 'FC': 'fine_earth_bulk',

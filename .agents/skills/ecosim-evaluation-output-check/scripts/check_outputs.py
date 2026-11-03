@@ -164,7 +164,8 @@ def prepare(namelist_path, manifest_path, scratch, ecosim_root):
             raise ValueError(f'Missing {key}: {path}')
         if key in ('clm_hour_file_in', 'pft_mgmt_in', 'soil_mgmt_in'):
             with nc.Dataset(path) as ds:
-                if 'year' not in ds.variables or data['year'] not in np.asarray(ds['year'][:]):
+                constant = key == 'pft_mgmt_in' and 'pft_dflag' in ds.variables and int(ds['pft_dflag'][...]) == 0
+                if not constant and ('year' not in ds.variables or data['year'] not in np.asarray(ds['year'][:])):
                     raise ValueError(f'{key} lacks selected year {data["year"]}')
         destination = scratch / 'input' / (key + path.suffix)
         copies.append(dict(key=key, source=str(path), destination=str(destination), sha256=digest(path)))

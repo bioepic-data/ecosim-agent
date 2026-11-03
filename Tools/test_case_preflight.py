@@ -156,6 +156,43 @@ stop_option='nyears'
             ds['CH4'].units='ppb';ds['year'][10]=2001.5
         self.assertTrue(any(f['category']=='greenhouse_gases' for f in self.errors()))
 
+    def constant_plant_file(self):
+        """A single record with a label outside the requested forcing years."""
+        source = self.root / 'plant.nc'
+        scratch = self.root / 'constant.nc'
+        with nc.Dataset(source) as src, nc.Dataset(scratch, 'w') as dst:
+            for name, dim in src.dimensions.items():
+                dst.createDimension(name, 1 if name == 'year' else len(dim))
+            for name, var in src.variables.items():
+                out = dst.createVariable(name, var.dtype, var.dimensions,
+                                         fill_value=getattr(var, '_FillValue', None))
+                out.setncatts({k: var.getncattr(k) for k in var.ncattrs() if k != '_FillValue'})
+                out[...] = var[:1] if var.dimensions and var.dimensions[0] == 'year' else var[...]
+            dst['pft_dflag'][...] = 0
+            dst['year'][:] = [1999]
+        scratch.replace(source)
+
+    def test_constant_vegetation_does_not_need_annual_coverage(self):
+        self.constant_plant_file()
+        self.assertFalse(self.errors())
+
+    def test_constant_vegetation_still_checks_active_pft_and_event_counts(self):
+        self.constant_plant_file()
+        self.edit('plant.nc', 'nmgnts', (0,0,0), 25)
+        self.assertTrue(any(f['category'] == 'plant_management' for f in self.errors()))
+        self.edit('plant.nc', 'nmgnts', (0,0,0), 0)
+        self.edit('plant.nc', 'pft_type', (0,0,0,slice(0,6)), np.array(list('BADPFT'), dtype='S1'))
+        self.assertTrue(any(f['category'] == 'plant_management' for f in self.errors()))
+
+    def test_constant_mode_rejects_ambiguous_extra_records(self):
+        self.edit('plant.nc', 'pft_dflag', (), 0)
+        self.assertTrue(any('exactly one reusable' in f['message'] for f in self.errors()))
+
+    def test_annual_mode_still_requires_every_forcing_year(self):
+        self.constant_plant_file()
+        self.edit('plant.nc', 'pft_dflag', (), 1)
+        self.assertTrue(any('Missing requested years' in f['message'] for f in self.errors()))
+
     def test_active_management_fill_and_excess_count_block(self):
         self.edit('plant.nc','nmgnts',(0,0,0),-9999)
         self.assertTrue(any(f['category']=='plant_management' for f in self.errors()))
