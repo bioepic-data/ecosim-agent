@@ -80,7 +80,7 @@ The checker validates the plant blocks at the selected grid for:
 - osmotic potential sign and standing dead biomass sign
 - growth yield bounds
 - N and P concentration magnitudes
-- class-information conventions, including that annual plants are treated as evergreen in EcoSIM
+- class-information conventions: the annual-evergreen setting applies to annual crop plants, not all annual vegetation
 - woody versus herbaceous root trait consistency
 - cross-parameter checks such as `PhiMIN <= PhiMAX` and fine-root radius not exceeding primary-root radius
 - `RSRR` radial root resistivity, its implied fully wetted conductivity, and its interaction with soil drying and total root resistance
@@ -129,7 +129,7 @@ Use this JSON shape:
 }
 ```
 
-Web evidence findings default to `WARN` because literature and trait database ranges vary with species, site, phenology, and measurement protocol. Use `severity: "ERROR"` in the evidence JSON only when a value is unequivocally impossible or contradicts a required categorical identity. Do not use external deciduous foliage descriptions to override the EcoSIM convention that annual plants are represented as evergreen in `IWTYP`.
+Web evidence findings default to `WARN` because literature and trait database ranges vary with species, site, phenology, and measurement protocol. Use `severity: "ERROR"` in the evidence JSON only when a value is unequivocally impossible or contradicts a required categorical identity. The `IWTYP=0` annual-evergreen convention applies to **annual crop plants seeded by humans**. It does not apply universally to self-seeding annual grassland or legumes. `ISTYP` controls annual/perennial life cycle separately from `IWTYP`, which selects climate-responsive phenology. For self-seeding annuals, select `IWTYP` according to the site's climate and the active reader/process implementation; drought-deciduous `IWTYP=2` is supported. See `PlantPhenolMod.F90` near `CropPhenoChk` and the explicit annual drought-deciduous branches. Do not classify management context from the PFT name alone: `clva` can represent a natural annual clover. A `.desc` file alone cannot establish human seeding; record verified crop context in the site evidence and use an explicit categorical `IWTYP` expectation when applicable. Do not change natural annuals to evergreen merely to silence a checker warning.
 
 For photosynthetic-property checks, interpret `RUBP`, `PEPC`, and `CHL` as fractions of the same total leaf-protein pool. Derive that pool from the smaller of the N- and P-supported amounts in active leaf structural biomass. All leaf structure is active; all non-tree root structure is active; for trees, apply root protein relationships only to active structural root biomass and exclude lignified heartwood. Separate `CNRTLIG` and `CPRTLIG` trait inputs are not required. Check `SLA1` only as an independently evidenced morphological trait. Do not use `SLA1` to back-calculate leaf-area `Vcmax`, `Jmax`, or other photosynthetic capacities unless the model mapping and all required conversions are explicitly supported.
 

@@ -69,7 +69,7 @@ For each selected first-grid plant block:
 4. Prefer sources with measurement units, sample size, geography, and citation.
 5. Convert only traits that can be defensibly mapped to EcoSIM variables.
 
-For annual plants, do not add a web-evidence expectation that `IWTYP` should be deciduous even when a botanical source describes the foliage that way. EcoSIM treats all annual plants as evergreen in the phenology-type field.
+For annual **crop plants seeded by humans**, the EcoSIM convention uses evergreen `IWTYP=0`; a botanical description of seasonal foliage alone does not override that crop setting. For self-seeding annual vegetation, derive climate-appropriate phenology from site evidence and the active model implementation. Annual drought-deciduous `IWTYP=2` is valid; do not suppress a justified categorical expectation simply because `ISTYP` is annual. Record human-seeded crop versus self-seeding natural context in the evidence source/conversion note. Shared PFT names such as `clva` do not establish this context. If context is unknown, report uncertainty rather than applying a blanket evergreen requirement.
 
 `SLA1` may be added to web evidence when the source is species- or site-specific. EcoSIM uses `m2 gC-1`; when a source reports `m2 kg-1 dry mass`, divide by the documented leaf carbon fraction and by `1000` to obtain `m2 gC-1`. State the carbon fraction and whether the value represents sun leaves, shade leaves, seedlings, or a canopy average. Do not use `SLA1` to derive leaf-area photosynthetic capacities for sanity-check findings. For photosynthetic properties, treat `CHL` as the fraction of total leaf protein in chlorophyll-bound/light-harvesting proteins, including chlorophyll-protein complexes associated with PSI, PSII, and LHC.
 

@@ -617,20 +617,13 @@ def check_class_information_conventions(block: PlantBlock, params: Dict[str, Lis
     if not block_is_annual(params):
         return
 
-    iwt_params = params.get("IWTYP", [])
-    if not iwt_params:
-        add(block, "WARN", "IWTYP", block.start_line, "annual plant is missing phenology type; EcoSIM treats annuals as evergreen")
-        return
-
-    for parameter in iwt_params:
-        if not raw_has_token(parameter, "evergreen") and 0.0 not in parameter.numeric_values:
-            add(
-                block,
-                "WARN",
-                "IWTYP",
-                parameter.line,
-                f"annual plant has phenology {parameter.raw_value!r}; EcoSIM convention treats all annual plants as evergreen",
-            )
+    # ISTYP describes life cycle, not management context. The active model
+    # supports self-seeding annual drought-deciduous vegetation explicitly;
+    # only human-seeded annual crops use the annual-evergreen convention.
+    # Check a crop-specific expectation through explicit site web evidence.
+    if not params.get("IWTYP"):
+        add(block, "WARN", "IWTYP", block.start_line,
+            "annual plant is missing phenology type; establish crop versus self-seeding context and climate-appropriate IWTYP")
 
 
 def block_is_annual(params: Dict[str, List[Parameter]]) -> bool:
@@ -1625,11 +1618,6 @@ def check_web_categorical(block: PlantBlock, params: Dict[str, List[Parameter]],
     for parameter in matching_params:
         raw = parameter.raw_value.strip()
         raw_lower = raw.lower()
-        if variable == "IWTYP" and block_is_annual(params):
-            allowed_values = [value for value in allowed_values if value == "0" or "evergreen" in value]
-            contains_values = [
-                value for value in contains_values if value.strip() == "0" or "evergreen" in value.lower()
-            ]
         if allowed_values and raw_lower not in allowed_values:
             add(
                 block,
