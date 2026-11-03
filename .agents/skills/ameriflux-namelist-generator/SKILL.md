@@ -44,13 +44,23 @@ When asked to create a run folder for a site, build it under `result/<SITE_ID>/`
 ```bash
 python .agents/skills/ameriflux-namelist-generator/scripts/create_ameriflux_namelist.py \
   --site-id US-Var \
+  --ecosystem-type grassland --observation-end-year 2021 \
   --output result/US-Var/US-Var.namelist \
   --pft-file /Users/jinyuntang/work/github/ecosim_workspace/croots/input_data/ecosim_pftpar_20260520.nc \
   --atm-ghg-file /Users/jinyuntang/work/github/ecosim_workspace/croots/input_data/fatm_hist_GHGs_1750-2023.nc
 ```
 
 5. If writing the namelist into an EcoSIM run directory, pass `--run-dir /path/to/run_dir` so input paths are written relative to the run directory, matching the Blodgett example.
-6. Review `start_date`, `forc_periods`, and `stop_n`. The script can infer forcing years from `year` in the climate NetCDF, but simulation chronology is a modeling decision.
+6. Classify land cover from site evidence before choosing chronology. For
+   grasslands (`GRA`) and croplands (`CRO`), use the first five complete forcing
+   years four times (20-year spinup), then run the full transient once through
+   the last available observation year. Pass `--observation-end-year` after
+   checking actual observation records; do not substitute the forcing endpoint.
+   The generator reads staged site JSON for land cover, or accepts
+   `--ecosystem-type grassland|cropland|other`. If metadata are absent, supply
+   the classification explicitly. Derive both `start_date` and `stop_n` from
+   this schedule; see the [chronology contract](references/namelist_contract.md#grassland-and-cropland-default).
+   Retain other ecosystems' existing chronology unless requested otherwise.
 7. Validate that referenced files exist from the namelist execution directory.
 8. For a run-folder request, create or refresh the site-root HTML guide after
    assembly and update its status after the smoke run, including when blocked.
@@ -105,6 +115,7 @@ Run:
 python .agents/skills/ameriflux-namelist-generator/scripts/create_ameriflux_namelist.py --site-id US-Var --dry-run
 ```
 
+For grasslands/croplands, include `--observation-end-year` in the dry run.
 Then inspect the output and verify:
 
 - `case_name` matches the site/case.

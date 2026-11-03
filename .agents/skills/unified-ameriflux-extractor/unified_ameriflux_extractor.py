@@ -253,6 +253,8 @@ def run_namelist_generation(
     clm_factor_in: str = "NO",
     soil_mgmt_in: str = "NO",
     lignification: str = "false",
+    ecosystem_type: str = "",
+    observation_end_year: Optional[int] = None,
 ) -> Optional[str]:
     """Create an EcoSIM namelist for a site package.
 
@@ -300,10 +302,12 @@ def run_namelist_generation(
         ("--atm-ghg-file", atm_ghg_file),
         ("--micpar-file", micpar_file),
         ("--run-dir", run_dir),
+        ("--ecosystem-type", ecosystem_type),
+        ("--observation-end-year", observation_end_year),
     ]
     for flag, value in optional_args:
         if value:
-            cmd.extend([flag, value])
+            cmd.extend([flag, str(value)])
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -376,6 +380,8 @@ def run_unified_extraction(
     clm_factor_in: str = "NO",
     soil_mgmt_in: str = "NO",
     lignification: str = "false",
+    ecosystem_type: str = "",
+    observation_end_year: Optional[int] = None,
 ) -> None:
     # Resolve coordinates
     if site_id:
@@ -490,6 +496,8 @@ def run_unified_extraction(
                 clm_factor_in=clm_factor_in,
                 soil_mgmt_in=soil_mgmt_in,
                 lignification=lignification,
+                ecosystem_type=ecosystem_type,
+                observation_end_year=observation_end_year,
             ) or ""
 
     # Record forcing files in YAML
@@ -541,6 +549,8 @@ def main():
     parser.add_argument("--clm-factor-in", default="NO", help="Optional climate factor input for namelist generation.")
     parser.add_argument("--soil-mgmt-in", default="NO", help="Optional soil management input for namelist generation.")
     parser.add_argument("--lignification", choices=("true", "false"), default="false", help="Set namelist llignification flag.")
+    parser.add_argument("--ecosystem-type", choices=("grassland", "cropland", "other"), help="Land cover for namelist chronology; otherwise use staged site metadata.")
+    parser.add_argument("--observation-end-year", type=int, help="Verified last observation year; required for grassland/cropland namelists.")
     args = parser.parse_args()
 
     run_unified_extraction(
@@ -571,6 +581,8 @@ def main():
         clm_factor_in=args.clm_factor_in,
         soil_mgmt_in=args.soil_mgmt_in,
         lignification=args.lignification,
+        ecosystem_type=args.ecosystem_type or "",
+        observation_end_year=args.observation_end_year,
     )
     progress = update_progress(args.site_id, args.result_dir)
     if progress:

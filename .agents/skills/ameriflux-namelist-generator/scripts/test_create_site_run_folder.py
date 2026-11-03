@@ -118,6 +118,54 @@ class RunFolderTests(unittest.TestCase):
         self.assertIn("forc_periods=1981,1984,18,1981,2021,1,1981,2021,0", text)
         self.assertRegex(text, r"stop_n=\s*113\b")
 
+    def test_grassland_metadata_selects_twenty_year_spinup(self):
+        import json
+
+        site_json = self.site_root / f"{SITE}_ecosim_site.json"
+        data = json.loads(site_json.read_text())
+        data["_raw"] = {"igbp_type": "GRA"}
+        site_json.write_text(json.dumps(data))
+        status, _ = self.run_folder("--observation-end-year", "2020")
+        self.assertEqual(status, 0)
+        text = self.namelist()
+        self.assertIn("start_date  = '19610101000000'", text)
+        self.assertIn("forc_periods=1981,1985,4,1981,2020,1,1981,2020,0", text)
+        self.assertRegex(text, r"stop_n=\s*60\b")
+        self.assertEqual(1961 + 60 - 1, 2020)
+
+    def test_cropland_explicit_type_and_matching_overrides(self):
+        status, _ = self.run_folder("--ecosystem-type", "cropland",
+                                  "--observation-end-year", "2021",
+                                  "--start-year", "1961", "--stop-n", "61")
+        self.assertEqual(status, 0)
+        self.assertIn("forc_periods=1981,1985,4,1981,2021,1,1981,2021,0", self.namelist())
+
+    def test_grassland_requires_verified_observation_endpoint(self):
+        with self.assertRaisesRegex(SystemExit, "observation-end-year"):
+            self.run_folder("--ecosystem-type", "grassland")
+
+    def test_grassland_rejects_inconsistent_calendar_or_cycles(self):
+        for option, value in (("--start-year", "1981"), ("--stop-n", "41"),
+                              ("--spinup-end-year", "1984"), ("--spinup-cycles", "5"),
+                              ("--regular-cycles", "2"), ("--final-cycles", "1")):
+            with self.subTest(option=option), self.assertRaises(SystemExit):
+                self.run_folder("--ecosystem-type", "grassland",
+                                "--observation-end-year", "2021", option, value)
+
+    def test_observation_endpoint_beyond_forcing_is_blocked(self):
+        with self.assertRaisesRegex(SystemExit, "extend inputs"):
+            self.run_folder("--ecosystem-type", "cropland", "--observation-end-year", "2024")
+
+    def test_forcing_override_cannot_fake_observation_coverage(self):
+        with self.assertRaisesRegex(SystemExit, "available climate range"):
+            self.run_folder("--ecosystem-type", "cropland", "--observation-end-year", "2024",
+                            "--force-end-year", "2024")
+
+    def test_fewer_than_five_spinup_years_is_blocked(self):
+        write_climate(self.site_root / f"{SITE}_ecosim_climate.nc", 2018, 2021)
+        with self.assertRaisesRegex(SystemExit, "five complete forcing years"):
+            self.run_folder("--ecosystem-type", "grassland", "--observation-end-year", "2021")
+
     def test_soil_management_is_wired_when_present(self):
         write_climate(self.site_root / f'{SITE}_soil_mgmt.nc', 1981, 2021)
         self.run_folder()

@@ -253,11 +253,29 @@ and the chronology options `--force-start-year`, `--spinup-end-year`,
 `--force-end-year`, `--spinup-cycles`, `--regular-cycles`, `--final-cycles`,
 `--start-year`, `--stop-n`.
 
-Default chronology: spinup repeats the first four forcing years 18 times,
-`start_date` is the forcing start minus the spinup years, and `stop_n` equals
-EcoSIM's `get_sim_len`, i.e. the sum of (end - start + 1) x cycles over the
-`forc_periods` triples. For US-UMB (ERA5 1981-2021) that is start 1909 and
-`stop_n = 72 + 41 = 113`.
+Default chronology for **grasslands and croplands**: repeat the first five
+complete forcing years four times (20-year spinup), then run once from the
+first forcing year through the last year with available evaluation observations.
+Pass `--observation-end-year O` to assembly; land cover is read from staged
+`<SITE_ID>_ecosim_site.json` (`_raw.igbp_type`, `igbp_type`, or `IGBP`), or pass
+`--ecosystem-type grassland|cropland` explicitly. Verify the site classification
+before assembly, especially where cached metadata are missing or ambiguous.
+The generator requires the observation endpoint for these land covers and
+rejects inconsistent start years, durations, or cycle overrides.
+
+For forcing start `A`, set `start_date=(A-20)0101000000`,
+`forc_periods=A,A+4,4,A,O,1,A,O,0`, and `stop_n=20+(O-A+1)` years.
+Thus the last simulated year is `start_year + stop_n - 1 = O`.
+For US-Var with forcing beginning 1981 and observations ending 2021, this is
+start **1961**, periods `1981,1985,4,1981,2021,1,1981,2021,0`, and **61 years**.
+See the [chronology contract](namelist_contract.md#grassland-and-cropland-default)
+for endpoint evidence and input coverage requirements.
+
+Other ecosystem types retain the existing default: first four forcing years
+18 times (72-year spinup), followed by one transient period. For US-UMB with
+forcing 1981–2021 that is start 1909 and `stop_n=72+41=113`.
+Explicitly requested alternative experiments must document their chronology;
+do not silently apply those alternatives to new grassland/cropland cases.
 
 ## Site Explanation HTML
 

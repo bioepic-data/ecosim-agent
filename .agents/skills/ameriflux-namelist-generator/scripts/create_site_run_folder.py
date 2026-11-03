@@ -173,6 +173,8 @@ def assemble(argv: Optional[list[str]] = None) -> int:
     for option in ("--start-year", "--force-start-year", "--spinup-end-year", "--force-end-year",
                    "--spinup-cycles", "--regular-cycles", "--final-cycles", "--stop-n"):
         parser.add_argument(option, type=int)
+    parser.add_argument("--ecosystem-type", choices=("grassland", "cropland", "other"))
+    parser.add_argument("--observation-end-year", type=int)
     args = parser.parse_args(argv)
 
     repo_root = args.repo_root.resolve()
@@ -248,7 +250,8 @@ def assemble(argv: Optional[list[str]] = None) -> int:
     if args.case_name:
         generator_args += ["--case-name", args.case_name]
     for name in ("start_year", "force_start_year", "spinup_end_year", "force_end_year",
-                 "spinup_cycles", "regular_cycles", "final_cycles", "stop_n"):
+                 "spinup_cycles", "regular_cycles", "final_cycles", "stop_n",
+                 "ecosystem_type", "observation_end_year"):
         value = getattr(args, name)
         if value is not None:
             generator_args += [f"--{name.replace('_', '-')}", str(value)]

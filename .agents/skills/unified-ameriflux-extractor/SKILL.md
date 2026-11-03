@@ -30,6 +30,12 @@ description: Run the combined AmeriFlux to EcoSIM extraction workflow for site m
    - `result/<SITE_ID>/<SITE_ID>_pft_mgmt.xlsx`
    - `result/<SITE_ID>/<SITE_ID>_soil_mgmt.xlsx`
 6. When climate, grid, plant-management, and soil-management files are available, create a site namelist with `ameriflux-namelist-generator`.
+   For grasslands and croplands, follow its [chronology contract](../ameriflux-namelist-generator/references/namelist_contract.md#grassland-and-cropland-default):
+   first five forcing years x four cycles (20-year spinup), then one transient
+   through the verified last observation year. Pass `--observation-end-year`
+   when using `--create-namelist`, and `--ecosystem-type grassland|cropland`
+   when classification is absent from staged metadata. Derive model start and total years
+   from the schedule, and document observation endpoint evidence.
 7. Write merged JSON and site-specific outputs under `result/<SITE_ID>/`.
 
 ## Purpose
