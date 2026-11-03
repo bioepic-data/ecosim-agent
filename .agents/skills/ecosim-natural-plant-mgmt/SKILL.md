@@ -13,7 +13,15 @@ Read `references/plant_mgmt_contract.md` when you need exact NetCDF dimensions, 
 
 ## Workflow
 
-1. Identify active PFTs for each topo unit and validate EcoSIM vegetation codes with `$ecosim-vegetation-code` against the active PFT parameter CDL.
+1. Before selecting PFTs for new or revised site vegetation data, deliberately
+   search site literature **and site modeling studies** for significant
+   nitrogen-fixing vegetation. Follow the required
+   [N-fixer evidence review](references/nitrogen_fixer_review.md), even when the
+   land-cover label or existing template contains only grass or non-fixing trees.
+   Record the evidence and the inclusion/omission decision; distinguish species
+   presence, ecological importance, measured fixation and model assumptions.
+   Then identify active PFTs for each topo unit and validate EcoSIM vegetation
+   codes with `$ecosim-vegetation-code` against the selected parameter table.
 2. Choose the editing path:
    - For an existing `.nc`, export to Excel, edit the workbook, then convert the edited workbook back to JSON or NetCDF.
    - For a new file, create either JSON directly or an Excel workbook matching the contract schema.

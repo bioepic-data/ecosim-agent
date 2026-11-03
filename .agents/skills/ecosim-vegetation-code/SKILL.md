@@ -13,6 +13,10 @@ Use this skill to translate real site vegetation into the six-character EcoSIM v
 
 1. Locate the scheme file. Prefer the user's requested CDL; otherwise use `templates/ecosim_pftpar_20260303.nc.cdl` from the EcoSIM workspace. If the file is missing, ask for the current PFT parameter CDL.
 2. Identify the site vegetation. Extract growth form, dominant taxa, crop identity, leaf type, life cycle, wetland status, N fixation, and whether the vegetation is C3/C4 or annual/perennial when applicable.
+   For site vegetation creation, complete the required
+   [N-fixer literature and modeling review](../ecosim-natural-plant-mgmt/references/nitrogen_fixer_review.md)
+   before reducing a mixed community to one PFT. Record significant or potentially
+   important fixing components and the decision to include or omit them.
 3. Map the vegetation to `pfts_short` using `pfts_long` as the meaning of each short code. Read `references/pft_mapping_reference.md` when the mapping is not obvious.
 4. Determine the Koppen numerical code. Use a provided EcoSIM grid/Koppen code if available. If the user provides a Koppen class like `Cfb`, map it through `koppen_clim_short`; if they provide only coordinates or a place name, use project data first and ask before relying on external climate lookup.
 5. Compose the candidate code as `<pfts_short><koppen_clim_no>`, such as `ndlf34` or `gr3s62`.

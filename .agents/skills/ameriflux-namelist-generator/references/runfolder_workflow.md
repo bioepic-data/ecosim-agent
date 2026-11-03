@@ -39,7 +39,13 @@ stage status from `result/<SITE_ID>/PROGRESS.md` when finishing or when asked.
 2. Use `ameriflux-atmchem-info` or `unified-ameriflux-extractor` to derive NADP/tDEP chemistry when climate chemistry variables are needed.
 3. Use `ameriflux-surgo-grid-extract` or `unified-ameriflux-extractor` to derive soil/grid profile values.
 4. Use `ameriflux-era5-to-ecosim` or `unified-ameriflux-extractor` to create hourly climate forcing.
-5. Use `ecosim-vegetation-code` to validate the EcoSIM PFT code from site vegetation and Koppen code.
+5. Before choosing vegetation PFTs, complete the mandatory
+   [N-fixer literature and modeling review](../../ecosim-natural-plant-mgmt/references/nitrogen_fixer_review.md).
+   Search for significant fixing species/components even when site metadata say
+   only grassland or forest. Record presence versus significance, field evidence
+   versus model assumptions, and the inclusion/omission decision in management
+   provenance and the HTML guide. Then use `ecosim-vegetation-code` to validate
+   PFT codes from site vegetation and Koppen code.
 6. Use `ecosim-natural-plant-mgmt` to create editable PFT-management Excel, JSON, and NetCDF files.
 7. Use `ecosim-soil-mgmt` to create editable soil-management Excel, JSON, and NetCDF files when fertilizer, tillage, irrigation, or other soil management is active.
 8. Use `ameriflux-namelist-generator` (`scripts/create_site_run_folder.py`) to assemble `result/<SITE_ID>/input/` and `result/<SITE_ID>/run_dir/` and write the namelist.
