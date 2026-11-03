@@ -427,6 +427,13 @@ python .agents/skills/ameriflux-namelist-generator/scripts/create_site_smoke_run
 The `.desc` file is read-only; corrections go to the PFT parameter NetCDF.
 A failed smoke run blocks the full run.
 
+Before describing the overall trait review as complete, require the
+[per-PFT evidence coverage audit](../../ecosim-plant-trait-sanity-check/references/evidence_coverage.md).
+Report deterministic/strict screening separately from literature support and
+unsearched groups, including radial/axial hydraulics and water relations.
+Zero findings against a sparse evidence file do not establish ecological
+validation. Preserve unresolved priors in the site guide with a red warning title.
+
 ### Correcting severe trait findings
 
 Unless `--no-fix-traits` is given, the script then corrects severe findings and

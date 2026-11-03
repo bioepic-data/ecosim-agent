@@ -38,7 +38,10 @@ python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait
 ```
 
 4. For a site run, first extract the site vegetation and site trait measurements (`scripts/site_vegetation.py extract`, then `site-evidence`), and target the searches at the site's dominant species (see [references/web_evidence.md](references/web_evidence.md), Site Vegetation First). Use web search to gather trait evidence for each first-grid plant block. Read [references/web_evidence.md](references/web_evidence.md), then search for the plant name, likely taxon, or functional type plus trait terms. For `ndlf35`, `woak35`, US-Me2, or US-xSP/SOAP work, also read [references/pft_case_notes.md](references/pft_case_notes.md). Before attributing low GPP or poor phenology to a trait, read the growth-stoichiometry, `PTSHT`, `ZTYPI`, and perennial-grass floral-initiation sections of [references/sanity_rules.md](references/sanity_rules.md).
-5. Convert the evidence into EcoSIM units and save a temporary evidence JSON file. Use species-level evidence when available; otherwise use genus, family, or functional-type evidence and mark that evidence level.
+5. Maintain the mandatory [evidence coverage audit](references/evidence_coverage.md)
+   for every reviewed PFT and relevant trait group. Record the actual search and
+   its outcome, including groups not searched; a clean checker cannot establish
+   review completeness. Convert the evidence into EcoSIM units and save a persistent site evidence JSON file. Use species-level evidence when available; otherwise use genus, family, or functional-type evidence and mark that evidence level.
    Combine per-species values by canopy share (`site_vegetation.py weight`) and run `site_vegetation.py lint`.
 6. Re-run the checker with the evidence file:
 
@@ -47,7 +50,14 @@ python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait
 ```
 
 7. Report findings by severity. Lead with `ERROR` findings, then `WARN` findings, and include the plant code, grid tuple, parameter name, source line, and web source when applicable.
-8. If there are no findings, state that the first-grid plant blocks passed both deterministic and web-informed checks and mention how many plants and parameters were inspected.
+8. Report two separate verdicts: **parameter screening** and **literature-review
+   coverage**. With zero findings, say only that the selected blocks passed the
+   implemented screens and supplied evidence comparisons. State which trait
+   groups have applicable evidence, which rely on provisional/model/user priors,
+   and which remain unsearched or unresolved. Do not say all traits are supported,
+   ecologically validated, or comprehensively reviewed unless the coverage audit
+   supports that claim. A five-day read-back of one parameter does not complete
+   the site's broader trait review; retain that limited scope.
 
 ## What Is Checked
 

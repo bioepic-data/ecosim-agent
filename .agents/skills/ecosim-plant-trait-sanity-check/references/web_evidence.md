@@ -2,6 +2,10 @@
 
 Use web evidence to catch ecologically implausible parameters that cannot be judged from file structure alone. Every web-informed finding should be traceable to a source URL, evidence level, and unit conversion note.
 
+Before calling a review complete, populate the required
+[evidence coverage audit](evidence_coverage.md). Evidence omitted from the JSON
+is not evidence that a search was completed or that the parameter is acceptable.
+
 ## Source Priority
 
 Use sources in this order:
