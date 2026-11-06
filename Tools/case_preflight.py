@@ -156,7 +156,10 @@ def validate_events(obj):
     elif isinstance(obj, dict):
         for key, val in obj.items():
             if key in ('DDMMYYYY', 'DST', 'DEN') and val:
-                datetime.strptime(str(val).zfill(8), '%d%m%Y')
+                stamp = str(val).zfill(8)
+                # The native reader applies year-0000 recurring events in the
+                # simulation year; use a leap year to validate their month/day.
+                datetime.strptime(stamp[:4] + ('2000' if stamp[4:] == '0000' else stamp[4:]), '%d%m%Y')
             elif isinstance(val, (float, int)) and not np.isfinite(val):
                 raise ValueError(f'Non-finite management value {key}')
             else:
@@ -340,6 +343,11 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
                 raise ValueError(f'nlevs must match the standalone GridMod JZ setting {sorted(layers)}')
             grid_bounds = bounds(ds)
             koppen = checked_numbers(ds['IETYPG']).reshape(-1).astype(int)
+            # readsiteNC reads a site-wide IETYPG and broadcasts it to cells.
+            if koppen.size == 1:
+                koppen = np.repeat(koppen, len(grid_bounds))
+            elif koppen.size != len(grid_bounds):
+                raise ValueError('IETYPG must be site-wide or cover every topographic unit')
             for name in schema:
                 if ds[name].dtype.kind in 'iuf':
                     var = ds[name]
@@ -371,8 +379,10 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
             if key in selected:
                 def check_grid_support():
                     with nc.Dataset(selected[key]) as ds:
-                        if 'ngrid' not in ds.dimensions or len(ds.dimensions['ngrid']) != cells:
-                            raise ValueError(f'{key}: climate ngrid does not match the grid cell count {cells}')
+                        # ClimReadMod requires one weather series and applies
+                        # it across the landscape; ngrid is not the cell count.
+                        if 'ngrid' not in ds.dimensions or len(ds.dimensions['ngrid']) != 1:
+                            raise ValueError(f'{key}: the standalone climate reader requires ngrid=1 (shared by {cells} cells)')
                 check('spatial_support', check_grid_support)
 
     def pft_check():

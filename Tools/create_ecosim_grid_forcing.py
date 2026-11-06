@@ -151,51 +151,57 @@ def validate_grid_layers(output_file):
     with nc.Dataset(output_file) as ds:
         if any(n not in ds.variables for n in ('NJ', 'NL1', 'NL2', 'NUI')):
             return ['Missing soil layer selectors NJ/NL1/NL2/NUI']
-        if len(ds.dimensions.get('ntopou', [])) != 1:
-            return ['Layer validation supports one topographic unit; multiple units remain unverified']
-        nj, nl1, nl2, nui = [int(np.ravel(ds[n][:])[0]) for n in ('NJ', 'NL1', 'NL2', 'NUI')]
-        nread = nj + nl1
-        nlevs = len(ds.dimensions['nlevs'])
-        if not (1 <= nui <= nj <= nread <= nlevs) or nl1 < 0 or nl2 < 0 or nread + nl2 > nlevs:
-            return ['Invalid layer selectors: require 1 <= NUI <= NJ <= NJ+NL1 and NJ+NL1+NL2 <= nlevs']
-        if nl2 and nread < 2:
-            return ['At least two supplied layer depths are needed for deep extrapolation']
-        for varname in REQUIRED_SOIL_RANGES:
-            if varname not in ds.variables:
-                problems.append(f"{varname}: variable missing")
+        if not len(ds.dimensions.get('ntopou', [])):
+            return ['Missing or empty topographic-unit dimension']
+        for unit in range(len(ds.dimensions['ntopou'])):
+            start_problem = len(problems)
+            nj, nl1, nl2, nui = [int(np.ravel(ds[n][:])[unit]) for n in ('NJ', 'NL1', 'NL2', 'NUI')]
+            nread = nj + nl1
+            nlevs = len(ds.dimensions['nlevs'])
+            if not (1 <= nui <= nj <= nread <= nlevs) or nl1 < 0 or nl2 < 0 or nread + nl2 > nlevs:
+                problems.append(f'Topographic unit {unit+1}: invalid layer selectors: require 1 <= NUI <= NJ <= NJ+NL1 and NJ+NL1+NL2 <= nlevs')
                 continue
-            values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
-            bad = [i + nui for i, v in enumerate(values) if not in_range(varname, v)]
-            if bad:
-                problems.append(f"{varname}: invalid in layers {bad}")
-        if 'FC' in ds.variables and 'WP' in ds.variables:
-            fc = np.ma.filled(ds['FC'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
-            wp = np.ma.filled(ds['WP'][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
-            bad = [i + nui for i in range(len(fc)) if fc[i] >= 0 and wp[i] >= 0 and fc[i] <= wp[i]]
-            if bad:
-                problems.append(f"FC <= WP in layers {bad}")
-        for varname in MODEL_ESTIMATED_IF_NEGATIVE:
-            if varname not in ds.variables:
-                problems.append(f'{varname}: variable missing (use -1 explicitly for model estimation)')
-            else:
-                values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(-1)[nui-1:nread]
-                bad = [i + nui for i, v in enumerate(values) if not np.isfinite(v) or v < -1]
+            if nl2 and nread < 2:
+                problems.append(f'Topographic unit {unit+1}: at least two supplied layer depths are needed for deep extrapolation')
+                continue
+            for varname in REQUIRED_SOIL_RANGES:
+                if varname not in ds.variables:
+                    problems.append(f"{varname}: variable missing")
+                    continue
+                values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(len(ds.dimensions['ntopou']), -1)[unit,nui-1:nread]
+                bad = [i + nui for i, v in enumerate(values) if not in_range(varname, v)]
                 if bad:
-                    problems.append(f"{varname}: invalid value or missing-data sentinel in layers {bad}")
-        def profile(name):
-            return np.ma.filled(ds[name][:].astype(float), np.nan).reshape(-1)[nui-1:nread]
-        if 'CDPTH' in ds.variables:
-            depths = profile('CDPTH')
-            if np.any(depths <= 0) or np.any(np.diff(depths) <= 0):
-                problems.append('CDPTH must be positive and strictly increasing')
-        if all(n in ds.variables for n in ('CSAND', 'CSILT')):
-            if np.any(profile('CSAND') + profile('CSILT') > 1000.01):
-                problems.append('CSAND + CSILT exceeds 1000 kg/Mg (negative implied clay)')
-        if all(n in ds.variables for n in ('FC', 'WP', 'BKDSI', 'CORGC')):
-            from Tools.soil_volume_checks import particle_density
-            porosity = 1 - profile('BKDSI') / particle_density(profile('CORGC'))
-            if np.any(profile('FC') > porosity + 1.e-6) or np.any(profile('WP') > porosity + 1.e-6):
-                problems.append('FC or WP exceeds model matrix porosity using the organic-adjusted particle density')
+                    problems.append(f"{varname}: invalid in layers {bad}")
+            if 'FC' in ds.variables and 'WP' in ds.variables:
+                fc = np.ma.filled(ds['FC'][:].astype(float), SOIL_FILL_VALUE).reshape(len(ds.dimensions['ntopou']), -1)[unit,nui-1:nread]
+                wp = np.ma.filled(ds['WP'][:].astype(float), SOIL_FILL_VALUE).reshape(len(ds.dimensions['ntopou']), -1)[unit,nui-1:nread]
+                bad = [i + nui for i in range(len(fc)) if fc[i] >= 0 and wp[i] >= 0 and fc[i] <= wp[i]]
+                if bad:
+                    problems.append(f"FC <= WP in layers {bad}")
+            for varname in MODEL_ESTIMATED_IF_NEGATIVE:
+                if varname not in ds.variables:
+                    problems.append(f'{varname}: variable missing (use -1 explicitly for model estimation)')
+                else:
+                    values = np.ma.filled(ds[varname][:].astype(float), SOIL_FILL_VALUE).reshape(len(ds.dimensions['ntopou']), -1)[unit,nui-1:nread]
+                    bad = [i + nui for i, v in enumerate(values) if not np.isfinite(v) or v < -1]
+                    if bad:
+                        problems.append(f"{varname}: invalid value or missing-data sentinel in layers {bad}")
+            def profile(name):
+                return np.ma.filled(ds[name][:].astype(float), np.nan).reshape(len(ds.dimensions['ntopou']), -1)[unit,nui-1:nread]
+            if 'CDPTH' in ds.variables:
+                depths = profile('CDPTH')
+                if np.any(depths <= 0) or np.any(np.diff(depths) <= 0):
+                    problems.append('CDPTH must be positive and strictly increasing')
+            if all(n in ds.variables for n in ('CSAND', 'CSILT')):
+                if np.any(profile('CSAND') + profile('CSILT') > 1000.01):
+                    problems.append('CSAND + CSILT exceeds 1000 kg/Mg (negative implied clay)')
+            if all(n in ds.variables for n in ('FC', 'WP', 'BKDSI', 'CORGC')):
+                from Tools.soil_volume_checks import particle_density
+                porosity = 1 - profile('BKDSI') / particle_density(profile('CORGC'))
+                if np.any(profile('FC') > porosity + 1.e-6) or np.any(profile('WP') > porosity + 1.e-6):
+                    problems.append('FC or WP exceeds model matrix porosity using the organic-adjusted particle density')
+            if len(ds.dimensions['ntopou']) > 1:
+                problems[start_problem:] = [f'Topographic unit {unit+1}: {message}' for message in problems[start_problem:]]
     return problems
 
 
