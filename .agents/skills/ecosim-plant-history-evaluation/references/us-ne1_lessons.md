@@ -141,3 +141,23 @@ NEE/GPP paired hours were only 322 in 2017 and 289 in 2018; a 504-hour window is
 not 504 observations. The saved window CSV and plot script supplement the
 seasonal diurnal cycles and original week-long plots. Dates and duration are
 examples, not compulsory windows for other sites.
+
+## Soybean height and leafout thresholds (2026-11-12)
+
+In the shared `ne1_run` 2022 soybean checkpoint sensitivity, canopy height was
+3.75 m but stalk height at the canopy peak was only 1.34 m. A joint change
+SSL1 0.5→0.125 and SNL1 0.25→0.1 reduced peak canopy/stalk height to
+1.30/0.52 m, with LAI almost unchanged (5.40→5.42) and only about 1% lower GPP.
+This prioritizes separate petiole and internode diagnostics when plants are too
+tall; it does not validate those coefficients or assign their individual effects.
+
+On that geometry background, changing both VRNLI and VRNXI 240→360 h produced
+identical selected 2022 daily outputs, despite verified trait readback. The
+annual evergreen-crop pathway has alternative planting/annual conditions for
+reserve mobilization, and physical emergence is checked separately. Do not
+assume a parameter named for leafout imposes a planting-to-emergence delay;
+trace the active pathway and verify response. This result is case-specific.
+
+The reproducible reports are under
+`work-space/share_tang_USNe_3sites/ne1_run/experiments/soybean_VCMX45_VOMX9_20261112/`
+in `evaluation_geometry/` and `evaluation_VRN360/`.

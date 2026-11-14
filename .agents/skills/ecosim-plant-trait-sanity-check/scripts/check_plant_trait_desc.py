@@ -350,6 +350,7 @@ NO_PETIOLE_SHEATH_LABEL_TOKENS = (
 )
 
 ANGSH_ZERO_TOLERANCE = 1.0e-6
+SOYBEAN_ANGSH_USER_DEFAULT = 45.0  # User instruction, 2026-11-13; degrees from horizontal.
 SECONDS_PER_HOUR = 3600.0
 CONIFER_RSRR_WARN_RANGE_MPA_H_PER_M = (1000.0, 10000.0)
 ROOT_RADIAL_CONDUCTIVITY_BROAD_RANGE_M_PER_S_MPA = (4.7e-9, 1.2e-5)
@@ -897,6 +898,22 @@ def check_variable_ranges(block: PlantBlock, params: Dict[str, List[Parameter]],
 
 
 def check_petiole_sheath_angle(block: PlantBlock, params: Dict[str, List[Parameter]], add) -> None:
+    if block.short_code == "soyb":
+        for parameter in params.get("ANGSH", []):
+            for value in parameter.numeric_values:
+                if abs(value - SOYBEAN_ANGSH_USER_DEFAULT) > ANGSH_ZERO_TOLERANCE:
+                    add(
+                        block,
+                        "WARN",
+                        "ANGSH",
+                        parameter.line,
+                        f"soybean ANGSH differs from the user default (2026-11-13): "
+                        f"expected 45 degrees from horizontal, found {value:g}; "
+                        "retain explicitly requested sensitivities and report the deviation, "
+                        "not a physiological error or literature violation",
+                        "user-default",
+                    )
+
     if not block_lacks_petiole_or_sheath(block):
         return
 

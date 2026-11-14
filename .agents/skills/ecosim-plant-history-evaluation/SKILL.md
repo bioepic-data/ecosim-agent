@@ -58,6 +58,10 @@ coupled variables to assess their interpretation.
 - **Canopy and phenology:** seasonal LAI, height, leaf/shoot/root biomass,
   emergence or leafout, flowering, grain filling and senescence as applicable.
   Compare photosynthetic shutdown with green leaf area and phenological stage.
+  When plants are too tall, explicitly inspect selected `SSL1` (petiole/sheath
+  extension) and `SNL1` (internode extension). Separate canopy/leaf-tip height
+  from stalk height before attributing the excess; follow the
+  [height diagnosis](references/history_diagnostics.md#excessive-height).
 - **Photosynthetic traits:** realized SLA, Vcmax25, Vomax25, Jmax25, Rubisco
   activation, leaf N/P and protein allocation. Compare the relevant growing or
   mature-leaf period, not all-year means dominated by zeros or senescing tails.

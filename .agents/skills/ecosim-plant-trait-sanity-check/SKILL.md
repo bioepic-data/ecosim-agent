@@ -77,6 +77,7 @@ The checker validates the plant blocks at the selected grid for:
 - total photosynthetic protein allocation without double-counting the shared leaf-protein pool
 - `SLA1` against explicit species- or site-specific web evidence, without using SLA to infer photosynthetic kinetics
 - `ANGSH = 0` for plant forms without petiole or sheath tissue, including conifer, lichen, and moss PFTs
+- Soybean (`soyb*`) `ANGSH = 45 degrees` from horizontal is the user-selected default (2026-11-13). The checker reports other numeric values as `user-default` warnings, including in strict physiology mode. Respect explicit sensitivity values; keep `.desc` files read-only. This is a parameter preference, not a literature-derived range, a leaf-inclination `CLASS` setting, or a validated emergence correction. Use 45 when preparing soybean defaults unless the user specifies another value; apply changes only to the selected parameter NetCDF through `ParEditor`.
 - osmotic potential sign and standing dead biomass sign
 - growth yield bounds
 - N and P concentration magnitudes
@@ -151,7 +152,7 @@ diagnostic is not. Parameter values must be backed by literature: each numeric
 correction takes the midpoint of a sourced range in the web-evidence JSON
 (`SLA1`: 0.25 x that typical value), Rubisco kinetics are corrected through
 `VOMX` from a sourced `derived_ranges` entry `RUBISCO_SPECIFICITY`, and
-categorical codes follow `ElmIDMod.F90`. Exception: **C3 tree `CHL` default (user rule, 2026-10-12):** for C3 trees (`ICTYP` C3 with a tree `pfts_short`: `ndlf`, `ndld`, `bdlf`, `bdln`, `bdlw`, `bspr`, `dfir`, `jpin`, `lpin`, `tasp`, `woak`), when the literature search finds no usable light-harvesting fraction, set `CHL = 0.12`. This is the one sanctioned exception to literature-backed values: record it as `user default`, not as literature, in the correction log and report. Because Jmax scales with `ETMX*CHL`, check the protein-normalized Jmax:Vcmax diagnostic after applying it and report the change in Jmax (for the `bdlf42` template, 0.025 -> 0.12 raises Jmax 4.8x, Jmax:Vcmax 0.51 -> 2.47). A sourced `CHL`/`ETMX` pair replaces the default when one is found. Otherwise, without a sourced range a finding stays
+categorical codes follow `ElmIDMod.F90`. Exception: **C3 tree `CHL` default (user rule, 2026-10-12):** for C3 trees (`ICTYP` C3 with a tree `pfts_short`: `ndlf`, `ndld`, `bdlf`, `bdln`, `bdlw`, `bspr`, `dfir`, `jpin`, `lpin`, `tasp`, `woak`), when the literature search finds no usable light-harvesting fraction, set `CHL = 0.12`. This user-authorized default is distinct from literature evidence: record it as `user default`, not as literature, in the correction log and report. Because Jmax scales with `ETMX*CHL`, check the protein-normalized Jmax:Vcmax diagnostic after applying it and report the change in Jmax (for the `bdlf42` template, 0.025 -> 0.12 raises Jmax 4.8x, Jmax:Vcmax 0.51 -> 2.47). A sourced `CHL`/`ETMX` pair replaces the default when one is found. Otherwise, without a sourced range a finding stays
 unresolved. Corrections go to a site PFT-parameter copy via `ParEditor`, never
 to the `.desc` file, and every correction record carries its citation.
 

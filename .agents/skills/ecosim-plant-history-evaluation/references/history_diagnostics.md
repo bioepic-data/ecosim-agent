@@ -56,6 +56,28 @@ matter/m². A missing unit is uncertainty. Use a documented carbon fraction
 only when converting a dry-mass measurement; do not apply it twice. Likewise,
 BIF organ `Total` chemistry does not establish leaf N/P concentrations.
 
+## Excessive height
+
+When canopy height is excessive, check both `SSL1` and `SNL1` in the selected
+PFT file and read-only trait output before recommending unrelated physiology
+or leaf-area changes. `SSL1` scales petiole/sheath extension; `SNL1` scales
+stem internode extension. These are growth-allometry coefficients, not measured
+organ lengths: biomass exponents, growth allocation, etiolation and angular
+projection also enter the equations.
+
+Compare `CAN_HT_pft` and `Stalk_HT_pft` on the same dates, including stalk height
+at the canopy-height peak. Canopy height includes petiole and leaflet elevation;
+the difference is not petiole length alone. Large canopy-minus-stalk excess
+prioritizes petiole geometry/`SSL1` and height assembly; excessive stalk height
+prioritizes internodes/`SNL1`, node number, branching and biomass allocation.
+Inspect node-level lengths where available, and retain potential geometry or
+unit errors rather than compensating for them through tuning. Match literature
+by organ, stage, cultivar and angle reference. Keep LAI, leaf protein/capacity,
+GPP timing and energy fluxes in the comparison: shorter plants do not establish
+better emergence or carbon fluxes. Label combined SSL1/SNL1 perturbations as a
+joint response, not separate attribution; do not transfer case-specific tested
+values as defaults.
+
 ## Hydraulics and parameter diagnosis
 
 Read `PlantInfoMod`, `StartqMod` and water-uptake resistance assembly in the
