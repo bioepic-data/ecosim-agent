@@ -208,11 +208,17 @@ class SmokeRunTests(unittest.TestCase):
         for year in (1912, 1913):
             (directory / f'{SITE}.plant_trait.desc.{year}').touch()
         first = dict(findings=[], plants=[], finding_counts={'ERROR':0,'WARN':0},total_blocks=1,checked_blocks=1)
+        first.update(class_information_verdict='validated',class_information_counts={'validated':14})
         later = dict(findings=[dict(severity='ERROR',parameter='XKO2',message='later maize crop is invalid',pft_code='maiz41')],
                      plants=[],finding_counts={'ERROR':1,'WARN':0},total_blocks=1,checked_blocks=1)
+        later.update(class_information_verdict='incomplete_or_conflicted',class_information_counts={'unresolved':13,'contradicted':1})
         results = [mock.Mock(stdout=json.dumps(x),stderr='',returncode=0) for x in (first,later)]
-        with mock.patch.object(smoke.subprocess,'run',side_effect=results):
+        with mock.patch.object(smoke.subprocess,'run',side_effect=results) as review:
             result=smoke.check_traits(directory,SITE,SITE,None)
+        self.assertTrue(all('--require-class-evidence' in call.args[0] for call in review.call_args_list))
+        report=json.loads((directory/f'{SITE}_plant_trait_check.json').read_text())
+        self.assertEqual(report['class_information_counts'],{'validated':14,'unresolved':13,'invalid':0,'contradicted':1})
+        self.assertEqual(report['class_information_verdict'],'incomplete_or_conflicted')
         self.assertEqual(result['status'],'errors')
         self.assertEqual(result['errors'],1)
         self.assertEqual(len(result['desc_files']),2)

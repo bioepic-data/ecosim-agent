@@ -1,5 +1,11 @@
 # Web Evidence Workflow
 
+For plant classifications, follow the mandatory per-item
+[class validation contract](class_information_validation.md), including all 14
+fields and explicit evidence/mapping for each. `expected_codes` is supported
+alongside label expectations. An uncited or empty condition does not validate
+a class; unsupported assumptions and negative searches remain unresolved.
+
 Use web evidence to catch ecologically implausible parameters that cannot be judged from file structure alone. Every web-informed finding should be traceable to a source URL, evidence level, and unit conversion note.
 
 Before calling a review complete, populate the required

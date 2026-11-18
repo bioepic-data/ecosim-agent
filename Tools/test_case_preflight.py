@@ -105,6 +105,18 @@ stop_option='nyears'
         with nc.Dataset(self.root/filename,'a') as ds:
             ds[name][index]=value
 
+    def test_van_genuchten_fields_depend_on_selected_scheme(self):
+        with nc.Dataset(self.root/'grid.nc', 'a') as ds:
+            for name in ('VG_ALPHA', 'VG_N', 'VG_THETA_R', 'VG_L'):
+                if name in ds.variables:
+                    ds.renameVariable(name, 'unused_' + name)
+        self.assertFalse(self.errors())
+        self.nml.write_text(self.nml.read_text().replace('&ecosim\n',
+                            "&ecosim\nsoil_hydraulic_scheme='van_genuchten'\n"))
+        errors = self.errors()
+        self.assertTrue(any('VG_ALPHA' in x['message'] for x in errors))
+        self.assertFalse(any('VG_L' in x['message'] for x in errors))
+
     def test_precipitation_plausibility_findings_reach_case_preflight(self):
         with nc.Dataset(self.root/'weather.nc', 'a') as ds:
             ds['RAINH'][:] = .4

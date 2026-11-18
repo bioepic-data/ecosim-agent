@@ -145,7 +145,7 @@ class PhysiologicalParameterizationTests(unittest.TestCase):
         self.assertEqual([finding.parameter for finding in findings], ["ICTYP"])
         self.assertEqual(findings[0].category, "physiology")
 
-    def test_compensating_maize_parameters_are_flagged(self):
+    def test_excessive_maize_enzyme_allocation_is_flagged(self):
         block = c4_block(
             {
                 "VCMX": 45,
@@ -174,13 +174,51 @@ class PhysiologicalParameterizationTests(unittest.TestCase):
         self.assertEqual(
             flagged,
             {
-                "XKO2",
-                "VCMX/VOMX",
                 "PEPC/leaf-protein-pool",
                 "VCMX4*PEPC/VCMX*RUBP",
                 "ETMX*CHL/VCMX*RUBP",
             },
         )
+
+    def test_published_maize_kinetic_families_are_not_rejected(self):
+        # Cousins2010 Table2: both the modern and legacy assay families
+        # must pass the broad screen. Absolute VCMX is only a test scale.
+        for kc, ko, vo_vc in [(16.2, 183, 0.11), (34, 810, 0.30)]:
+            values = {
+                "VCMX":100,"VOMX":100*vo_vc,"XKCO2":kc,"XKO2":ko,
+                "RUBP":.10,"ETMX":1500,"VCMX4":400,"XKCO24":3,
+                "PEPC":.035,"CHL":.20,"fCHLMESO":.60,"FCO2":.40,
+                "CNWL":2.7,"CNLF":.04,"CPWL":27,"CPLF":.004,
+                "ALBR":.20,"TAUR":.20,"ALBP":.075,"TAUP":.075,
+            }
+            with self.subTest(kc=kc,ko=ko):
+                self.assertEqual(physiology_findings(c4_block(values)), [])
+
+    def test_measured_maize_capacity_ratios_above_two_point_five(self):
+        # Perdomo2016 Table3, contrasting measurement temperatures/treatments.
+        # Ratios are constraints, not direct enzyme-specific activity values.
+        for ratio in [133.8/29.9,219.5/31.7]:
+            values = {
+                "VCMX":100,"VOMX":11,"XKCO2":16.2,"XKO2":183,
+                "RUBP":.10,"ETMX":1500,"VCMX4":ratio*10/.035,"XKCO24":3,
+                "PEPC":.035,"CHL":.20,"fCHLMESO":.60,"FCO2":.40,
+                "CNWL":2.7,"CNLF":.04,"CPWL":27,"CPLF":.004,
+                "ALBR":.20,"TAUR":.20,"ALBP":.075,"TAUP":.075,
+            }
+            with self.subTest(ratio=ratio):
+                self.assertEqual(physiology_findings(c4_block(values)), [])
+
+    def test_extreme_maize_kinetics_still_fail(self):
+        values = {
+            "VCMX":100,"VOMX":200,"XKCO2":30,"XKO2":2000,
+            "RUBP":.10,"ETMX":1500,"VCMX4":400,"XKCO24":3,
+            "PEPC":.035,"CHL":.20,"fCHLMESO":.60,"FCO2":.40,
+            "CNWL":2.7,"CNLF":.04,"CPWL":27,"CPLF":.004,
+            "ALBR":.20,"TAUR":.20,"ALBP":.075,"TAUP":.075,
+        }
+        flags={f.parameter for f in physiology_findings(c4_block(values))}
+        self.assertIn('XKO2',flags)
+        self.assertIn('VCMX/VOMX',flags)
 
     def test_balanced_c4_parameterization_passes(self):
         block = c4_block(

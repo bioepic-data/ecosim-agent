@@ -153,7 +153,11 @@ def check_traits(smoke_dir: Path, site: str, case: str, evidence: Optional[Path]
         return {"status": "missing", "detail": f"No {case}.plant_trait.desc.* written by the smoke run"}
     reports = []
     for desc in descs:
-        base = [sys.executable, str(TRAIT_CHECKER), str(desc), "--strict-physiology"]
+        base = [sys.executable, str(TRAIT_CHECKER), str(desc), "--strict-physiology", "--require-class-evidence"]
+        trait_namelist = smoke_dir / f'{site}.namelist'
+        pft_file = namelist_pft_file(trait_namelist) if trait_namelist.is_file() else None
+        if pft_file:
+            base += ['--pft-file', str(pft_file)]
         if evidence:
             base += ["--web-evidence", str(evidence)]
         result = subprocess.run(base + ["--json"], capture_output=True, text=True)
@@ -172,6 +176,12 @@ def check_traits(smoke_dir: Path, site: str, case: str, evidence: Optional[Path]
                                 for severity in ("ERROR", "WARN")}
     report["total_blocks"] = sum(data.get("total_blocks", 0) for data in reports)
     report["checked_blocks"] = sum(data.get("checked_blocks", 0) for data in reports)
+    report['class_information_counts'] = {
+        status: sum(data.get('class_information_counts', {}).get(status, 0) for data in reports)
+        for status in ('validated', 'unresolved', 'invalid', 'contradicted')}
+    report['class_information_verdict'] = (
+        'validated' if all(data.get('class_information_verdict') == 'validated' for data in reports)
+        else 'incomplete_or_conflicted')
     report_json = smoke_dir / f"{site}_plant_trait_check.json"
     report_md = smoke_dir / f"{site}_plant_trait_check.md"
     report_json.write_text(json.dumps(report, indent=2) + "\n")

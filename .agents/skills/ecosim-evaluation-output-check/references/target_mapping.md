@@ -15,6 +15,9 @@ names, units, dimensions and semantics into the manifest.
 | Radiation | `ECO_RADSW_col`, `SOL_RADN_col`, `RADN_col` | Absorbed/incoming/net and shortwave/all-wave are different quantities. Missing outgoing components must be flagged. |
 | LAI | `ECO_LAI_col` | Leaf area versus leaf+stalk area; active PFT aggregation. |
 | Canopy height | `CAN_HT_pft`, `Stalk_HT_pft` | Match height statistic and plant organs. |
+| Leaf N | `LEAF_N_pft`, `LeafN_pft`, `LeafProteinN_pft`, actual PFT leaf area | Separate N stock per ground area, N per leaf area and protein N; verify structural/storage definitions and averaging. |
+| Phenological development | `Growth_Stage_pft` and applicable phenology/node/leaf fields | Verify codes, branch aggregation and sampling before assigning emergence, flowering, filling or senescence dates. |
+| Shoot-to-root ratio | `SHOOT_C_pft`, `Root_C_pft` | Carbon stock ratio with matching PFT/area/time support. Record storage/reproductive/nodule inclusion, mask invalid or near-zero root denominators, and show component stocks. Do not substitute a structural or root-density field. |
 | Foliage/aboveground C | `LEAF_C_pft`, `PetolSheth_C_pft`, `STALK_C_pft`, `RESERVE_C_pft`, `HUSK_C_pft`, `GRAIN_C_pft`, `SHOOT_C_pft`, `SHOOT_NONSTC_pft` | Trace pool overlap and storage before choosing/summing. Request leaf/sheath for foliage and all relevant aboveground pools for total biomass; do not double-count aggregate SHOOT_C. |
 | Crop production | Organ/pool/harvest fields established from code | Standing biomass is not cumulative harvested/exported production; Total/Foliage BIF is not automatically grain yield. |
 | LMA/SLA | `SLA_pft` and matching leaf C/dry-mass basis | Verify observed units and carbon fraction; leaf and shoot pools differ. |
@@ -24,8 +27,12 @@ names, units, dimensions and semantics into the manifest.
 | SOC and soil N | `tSOC_vr`, `tSOCL_vr`, `tSON_vr`, `BOTDEPZ_vr` | Verify geometric/matrix volume, layer thickness and laboratory pool definition; tSOC includes organic pools excluded by some soil sampling protocols. |
 | Bulk density/pH | Actual registry fields if available | Initialization-only values, water/salt pH, sampling depth and runtime changes require explicit mapping; mark missing outputs blocked. |
 
-A one-year output check should include support for **all relevant observations**,
-not every model variable. Do not demand root biomass, Vcmax/Jmax or NPP simply
-because an extractor can compute them if the site has no corresponding data.
+A one-year output check includes support for **all relevant observations** and
+the five required plant diagnostics: height, GPP, leaf N, phenological
+development and shoot-to-root ratio. These diagnostics remain required without
+field observations; report that limitation separately. Other fields are
+selected for the requested analysis and available observations, rather than
+because an extractor happens to support them. Follow the parent skill's
+companion coverage-table guidance for diagnostics without observations.
 If useful observations exist in other years, request their fields as well and
 record that this year validates output coverage rather than a same-year score.

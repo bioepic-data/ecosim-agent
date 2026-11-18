@@ -46,10 +46,53 @@ agreement and interannual skill.
 
 ## Evaluate plant behavior
 
+### Required evaluation diagnostics
+
+Unless the user explicitly narrows the evaluation, include **all five** of the
+following in every plant-output evaluation and sensitivity comparison. Their
+inclusion does not depend on field observations being available.
+
+| Diagnostic | Required assessment |
+|---|---|
+| Height | Seasonal canopy height and stalk height where emitted; peak values/dates and comparisons on field measurement dates, with height bias/RMSE and sample count when observations exist. |
+| GPP | Seasonal time series, annual/seasonal totals and relevant period means; derive increments from cumulative counters using verified resets. Compare available tower partitioning products on matched temporal support. |
+| Leaf N | Leaf N stock per ground area and N density per leaf area, alongside LAI; include protein N density and photosynthetic capacity where available to distinguish leaf expansion from N/protein dilution. |
+| Phenological development | Stage progression and applicable emergence/leafout, floral initiation, anthesis, seed/grain filling and senescence dates. For crops, always provide the stage-entry date and days-since-planting table below. For sensitivities, report milestone shifts against the matched control. |
+| Shoot-to-root ratio | Time series and stage/season summaries of shoot C / root C, showing both component stocks and their pool definitions. Use matched PFTs, dates and area bases; apply the [ratio rules](references/history_diagnostics.md#shoot-to-root-ratio). |
+
+Save quantitative results and plots for available diagnostics, plus a coverage
+table naming each diagnostic's source fields, units, temporal/pool basis,
+observation support and missing outputs. An unavailable diagnostic stays visible
+with the reason and required field; it makes diagnostic coverage incomplete.
+Use an explicit biological justification for non-applicable stages or organs.
+Missing observations limit field validation, not model-only evaluation. Do not
+launch another simulation solely to fill gaps without authorization; follow
+the missing-output workflow below.
+
+### Required crop phenology table
+
+For **every crop-output evaluation and sensitivity comparison**, include a
+table of entry into the applicable phenological stages in the readable report
+and user-facing evaluation response. This table remains required when the
+evaluation focuses on another crop diagnostic. Show **stage, entry date and
+days after planting (DAP)**; identify the case, crop/PFT and growing season.
+Include planting as **day 0** and retain missing or unreached stages with an
+explicit status. In comparisons, show dates and DAP for each case, using each
+case's own planting event. Save the underlying table as CSV when delivering
+evaluation artifacts.
+
+Follow the [crop phenology table rules](references/history_diagnostics.md#crop-phenology-table)
+for planting provenance, stage coverage, elapsed-day calculation, restart and
+rotation handling, and the distinction between model stages and observed V/R
+stages. Missing planting or stage information must be visible in the table;
+do not omit it or invent a date.
+
+### Coupled diagnostics
+
 Choose relevant diagnostics from the reference; do not fabricate absent fields
 or force irrelevant checks onto nonvascular vegetation, perennial stands or
-bare periods. At minimum, cover the user's requested quantities and enough
-coupled variables to assess their interpretation.
+bare periods. In addition to the five required diagnostics and the user's
+requested quantities, cover enough coupled variables to assess interpretation.
 
 - **Numerical and accounting checks:** contiguous interval coverage, valid
   active data, carbon identities, conservation counters, nonphysical negative
@@ -139,7 +182,10 @@ Save under the selected case's `evaluation/<unique-assessment>/` (or the user's
 chosen destination):
 
 - Scope/provenance and a reproducible script or explicit calculation manifest.
-- Annual/seasonal metrics and comparison tables with units and missing targets.
+- Annual/seasonal metrics, matched-control differences and the five-diagnostic
+  coverage table, with units, component pools and missing targets.
+- For crops, the required stage-entry dates and days-after-planting table,
+  including case-specific comparison columns and a CSV when saving artifacts.
 - Focused plots, field/literature evidence and a readable report.
 - Separate verdicts for output validity, plant behavior and parameter plausibility;
   ranked diagnoses and any proposed sensitivities, with uncertainty stated.

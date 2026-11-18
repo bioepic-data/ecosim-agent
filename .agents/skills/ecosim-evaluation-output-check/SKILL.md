@@ -8,6 +8,29 @@ description: Verify EcoSIM evaluation-output coverage with an isolated one-year 
 Use a one-year cold-start run to establish what the selected executable actually
 writes. A successful process exit or a variable name in source code is insufficient.
 
+For plant evaluation, also audit output support for **height, GPP, leaf N,
+phenological development and shoot-to-root ratio**, following the
+[required evaluation diagnostics](../ecosim-plant-history-evaluation/SKILL.md#required-evaluation-diagnostics)
+and [candidate mappings](references/target_mapping.md). Check all five even
+without matching observations, distinguishing missing model output from missing
+field evidence. For authorized run preparation, enable the registered support
+fields through the reviewed history selections and verify actual emission.
+Report unresolved core diagnostics alongside the observation-target result;
+an observation-manifest pass alone does not establish full diagnostic coverage.
+
+The helper's manifest requires real observation evidence. Keep diagnostics
+without observations in a companion coverage table and verify their fields,
+units, dimensions and valid data explicitly; do not fabricate observations or
+positive sample counts to fit the schema. This readiness audit does not replace
+the seasonal analysis in the plant-history evaluation skill.
+
+For crop outputs, audit support for the mandatory
+[stage-entry and days-after-planting table](../ecosim-plant-history-evaluation/references/history_diagnostics.md#crop-phenology-table):
+verify the selected planting event and stage timing fields. Include the table
+in the evaluation report and response, with planting at DAP 0 and explicit
+statuses for missing or unreached stages. An early cold-start year or missing
+field stages does not justify omitting the table.
+
 ## Select targets from observations
 
 1. Inventory actual nonmissing observations for the requested site, including
