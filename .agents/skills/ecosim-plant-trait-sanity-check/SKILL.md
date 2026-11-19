@@ -1,6 +1,6 @@
 ---
 name: ecosim-plant-trait-sanity-check
-description: Read-only sanity-check of EcoSIM plant_trait.*.desc parameter values for the first grid. Use when validating plant trait description files, enforcing clean C3/C4 physiological parameterization, reviewing photosynthetic kinetics, active leaf/root protein allocation, and root hydraulics such as RSRR, RVSR, and ARSRA, or checking ranges, units, and woody/herbaceous block consistency before running EcoSIM. Never edit or replace the `.desc` file.
+description: Read-only validation of EcoSIM plant_trait.*.desc values for the first grid, including all plant-class identities and their evidence coverage, C3/C4 physiology, active protein allocation and root hydraulics. Use for trait evaluation and run-readiness checks. Never edit or replace the `.desc` file.
 ---
 
 # EcoSIM Plant Trait Sanity Check
@@ -18,6 +18,14 @@ The check has two layers:
 - deterministic file checks for malformed values, units, ranges, and block consistency
 - web-informed ecological checks using species, genus, or plant-functional-type evidence gathered during the task
 
+**PLANT CLASS INFORMATION must be validation-based.** For every selected PFT,
+validate all 14 class items against active model codes/labels and applicable
+plant/site evidence. Read the mandatory
+[class validation contract](references/class_information_validation.md).
+Parsing, a valid enum, a PFT-name heuristic or absence of findings is not
+ecological validation. Report each item as validated, invalid, contradicted or
+unresolved; missing evidence must stay visible. The description stays read-only.
+
 Always back parameter-value judgments for `plant_trait.*.desc` files with web search unless the user explicitly asks for an offline/local-only check. Treat deterministic checker results as a first pass, not as sufficient evidence that ecological or physiological parameter values are correct.
 
 ## Workflow
@@ -26,10 +34,14 @@ Always back parameter-value judgments for `plant_trait.*.desc` files with web se
 2. For calibration or run readiness, run the deterministic checker in strict physiology mode:
 
 ```bash
-python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait_desc.py /absolute/path/to/plant_trait.1930.desc --strict-physiology
+python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait_desc.py /absolute/path/to/plant_trait.1930.desc --strict-physiology --require-class-evidence --pft-file /absolute/path/to/selected_pft.nc --web-evidence /absolute/path/to/site_evidence.json
 ```
 
 Omit `--strict-physiology` only for an exploratory review where physiological findings should remain warnings. Strict mode promotes physiological-consistency warnings to errors and returns a nonzero status.
+For an exploratory/offline review, `--require-class-evidence` may be omitted,
+but the class verdict remains incomplete when evidence is unresolved. A
+prescribed sensitivity may retain unsupported choices with that limitation
+explicitly reported; do not claim scientific readiness or validated classes.
 
 3. Keep the default grid scope unless the user explicitly asks for another grid. The default is equivalent to:
 
@@ -77,10 +89,12 @@ The checker validates the plant blocks at the selected grid for:
 - total photosynthetic protein allocation without double-counting the shared leaf-protein pool
 - `SLA1` against explicit species- or site-specific web evidence, without using SLA to infer photosynthetic kinetics
 - `ANGSH = 0` for plant forms without petiole or sheath tissue, including conifer, lichen, and moss PFTs
+- Soybean (`soyb*`) `ANGSH = 45 degrees` from horizontal is the user-selected default (2026-11-13). The checker reports other numeric values as `user-default` warnings, including in strict physiology mode. Respect explicit sensitivity values; keep `.desc` files read-only. This is a parameter preference, not a literature-derived range, a leaf-inclination `CLASS` setting, or a validated emergence correction. Use 45 when preparing soybean defaults unless the user specifies another value; apply changes only to the selected parameter NetCDF through `ParEditor`.
 - osmotic potential sign and standing dead biomass sign
 - growth yield bounds
 - N and P concentration magnitudes
-- class-information conventions: the annual-evergreen setting applies to annual crop plants, not all annual vegetation
+- all 14 class-information fields: required rows, code domains, label/code and optional selected-PFT consistency, plus mandatory per-item evidence verdicts; the annual-evergreen convention applies to human-seeded annual crops, not all annual vegetation
+- separate thermal-section parsing and finite positive RG/CG/LG inactivation energies when that section is present
 - woody versus herbaceous root trait consistency
 - cross-parameter checks such as `PhiMIN <= PhiMAX` and fine-root radius not exceeding primary-root radius
 - `RSRR` radial root resistivity, its implied fully wetted conductivity, and its interaction with soil drying and total root resistance
@@ -151,7 +165,7 @@ diagnostic is not. Parameter values must be backed by literature: each numeric
 correction takes the midpoint of a sourced range in the web-evidence JSON
 (`SLA1`: 0.25 x that typical value), Rubisco kinetics are corrected through
 `VOMX` from a sourced `derived_ranges` entry `RUBISCO_SPECIFICITY`, and
-categorical codes follow `ElmIDMod.F90`. Exception: **C3 tree `CHL` default (user rule, 2026-10-12):** for C3 trees (`ICTYP` C3 with a tree `pfts_short`: `ndlf`, `ndld`, `bdlf`, `bdln`, `bdlw`, `bspr`, `dfir`, `jpin`, `lpin`, `tasp`, `woak`), when the literature search finds no usable light-harvesting fraction, set `CHL = 0.12`. This is the one sanctioned exception to literature-backed values: record it as `user default`, not as literature, in the correction log and report. Because Jmax scales with `ETMX*CHL`, check the protein-normalized Jmax:Vcmax diagnostic after applying it and report the change in Jmax (for the `bdlf42` template, 0.025 -> 0.12 raises Jmax 4.8x, Jmax:Vcmax 0.51 -> 2.47). A sourced `CHL`/`ETMX` pair replaces the default when one is found. Otherwise, without a sourced range a finding stays
+categorical codes follow `ElmIDMod.F90`. Exception: **C3 tree `CHL` default (user rule, 2026-10-12):** for C3 trees (`ICTYP` C3 with a tree `pfts_short`: `ndlf`, `ndld`, `bdlf`, `bdln`, `bdlw`, `bspr`, `dfir`, `jpin`, `lpin`, `tasp`, `woak`), when the literature search finds no usable light-harvesting fraction, set `CHL = 0.12`. This user-authorized default is distinct from literature evidence: record it as `user default`, not as literature, in the correction log and report. Because Jmax scales with `ETMX*CHL`, check the protein-normalized Jmax:Vcmax diagnostic after applying it and report the change in Jmax (for the `bdlf42` template, 0.025 -> 0.12 raises Jmax 4.8x, Jmax:Vcmax 0.51 -> 2.47). A sourced `CHL`/`ETMX` pair replaces the default when one is found. Otherwise, without a sourced range a finding stays
 unresolved. Corrections go to a site PFT-parameter copy via `ParEditor`, never
 to the `.desc` file, and every correction record carries its citation.
 
@@ -193,7 +207,7 @@ Use web evidence in either Markdown or JSON mode:
 python3 .agents/skills/ecosim-plant-trait-sanity-check/scripts/check_plant_trait_desc.py /absolute/path/to/plant_trait.1930.desc --web-evidence /absolute/path/to/web_evidence.json --json
 ```
 
-The script returns a nonzero status when `ERROR` findings are present or when no blocks match the requested grid. With `--strict-physiology`, physiological-consistency warnings are promoted to `ERROR` except the model-formulation-sensitive `Jmax:Vcmax` diagnostic, which remains a lower-priority `WARN`. Unrelated ecological warnings also remain warnings.
+The script returns a nonzero status when `ERROR` findings are present or when no blocks match the requested grid. With `--strict-physiology`, physiological-consistency warnings are promoted to `ERROR` except the model-formulation-sensitive `Jmax:Vcmax` diagnostic. With `--require-class-evidence`, unresolved or contradicted class validation is also an error. JSON and Markdown report each class item's model validity, evidence support and overall verdict separately.
 
 ## Reporting Guidance
 

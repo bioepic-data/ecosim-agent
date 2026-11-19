@@ -36,6 +36,10 @@ diagnostics limit a conclusion rather than justify a guessed variable alias.
 | GPP, NPP, autotrophic respiration | `ECO_GPP_col`, `ECO_NPP_col`, `ECO_RA_col` | When annual cumulative, use the last counter after establishing its reset. Do not sum daily counters. In the inspected sign convention RA is negative, so NPP = GPP + RA. Check the identity at common times. |
 | ET | `ECO_ET_col` | Verify cumulative semantics, water-depth units and resets before forming an annual total. |
 | Canopy size | `ECO_LAI_col`, `CAN_HT_pft`, `LEAF_C_pft`, `SHOOT_C_pft`, `Root_C_pft` | Report annual peaks and relevant growing/mature-season distributions. Whole shoot includes its components; do not add leaf/stalk/grain pools to it again. |
+| Height | `CAN_HT_pft`, `Stalk_HT_pft` | Report canopy and stalk height separately in m, with peak dates and paired field-date comparisons. Daily means and observed sampling statistics may differ. |
+| Leaf N | `LEAF_N_pft`, `LeafN_pft`, `LeafProteinN_pft`, matched PFT leaf area | Distinguish structural leaf N stock (g N/m² ground), structural N density (g N/m² leaf) and protein N density (g N/m² leaf). Trace storage inclusion; these fields are not interchangeable. A stock/LAI ratio of interval means is a proxy for mean leaf N density. |
+| Phenological development | `Growth_Stage_pft` and applicable phenology/node/leaf diagnostics | Trace stage codes and branch aggregation before deriving milestones. Report full progression, transition dates and control/test shifts; always include the crop stage-entry/DAP table below. Model stages are not automatically field V/R stages. |
+| Shoot-to-root ratio | `SHOOT_C_pft`, `Root_C_pft` | Dimensionless shoot C / root C on the same PFT/area/time basis; show both stocks and follow the ratio rules below. |
 | Reproduction | `GRAIN_C_pft`, `GRAIN_N_pft`, `GRAIN_Number_pft`, `Growth_Stage_pft` | Match grain C and number at the same time for carbon per kernel. Peak standing grain C is not harvested dry-matter yield. Trace stage codes/reset rules before deriving dates. |
 | SLA | `SLA_pft` | Common history units are cm²/g C; multiply by 1e-4 for m²/g C. Check mature-leaf periods separately from low-mass senescence. SLA1 is a growth-allometry coefficient, not necessarily realized SLA. |
 | Photosynthetic capacity | `VcMax25C_RUBISCO_pft`, `VoMax25C_RUBISCO_pft`, `JMax25C_photo_pft`, `RUB_ACTVN_pft`, `LeafRubiscoN_pft` | Verify CO₂/O₂/electron and leaf-area bases, protein/enzyme-C conversions and activation. Compare leaf-area quantities with leaf-area observations, not protein-normalized input turnover rates. |
@@ -55,6 +59,98 @@ basis. Historical BADM protocols may use g C/m²; other sources use g dry
 matter/m². A missing unit is uncertainty. Use a documented carbon fraction
 only when converting a dry-mass measurement; do not apply it twice. Likewise,
 BIF organ `Total` chemistry does not establish leaf N/P concentrations.
+
+## Crop phenology table
+
+Every crop-output evaluation must show a table with **phenological stage,
+entry date and elapsed days after planting (DAP)** in its readable report and
+user-facing evaluation response. Identify the case, grid/PFT, cohort or crop
+cycle and season above the table or in columns. Save a CSV alongside generated
+evaluation artifacts. For a sensitivity comparison, provide dates and DAP for
+each case and the DAP shift relative to its matched control.
+
+- Establish the actual planting event from the selected management input and
+  model calendar/log when available. Honor model/forcing-year mapping and
+  events skipped because a crop is already alive. Record the planting source;
+  do not substitute emergence, January 1, run start or checkpoint date.
+- Calculate `DAP = stage_entry_date - planting_date` as elapsed days in the
+  model calendar, with planting at **DAP 0**, not 1. Use full dates across year
+  boundaries. Keep rotations, repeated plantings and cohorts separate; a
+  continued crop retains its original planting origin across a restart. Each
+  comparison case uses its own planting date, so date shifts and DAP shifts
+  need not be equal.
+- Include planting and all applicable stages in the selected model's sequence:
+  emergence, floral initiation, jointing, elongation, heading, anthesis,
+  beginning seed/grain fill, seed-number setting, seed-mass setting and end of
+  seed fill, plus diagnosed senescence or maturity where available. Keep
+  harvest separately labeled as a management event if included. Do not invent
+  absent stage codes or force cereal stage names onto a soybean V/R scale.
+- Prefer recorded stage calendars or transition timestamps. Otherwise state
+  the history variable, code/threshold, sampling resolution and entry rule,
+  accounting for averaging, resets and aggregation across branches. Label the
+  first observed attainment at daily resolution accordingly; do not present
+  it as an exact within-day or independently verified main-stem event. Distinguish
+  floral induction/initiation from first open flower; validate any mapping to
+  observed crop stages before interpreting a timing error.
+- Retain rows with `not reached`, `before evaluation window`, `unavailable` or
+  `not applicable`, with the reason. If planting is unknown, show available
+  stage dates but mark DAP unavailable. If a stage was already attained at the
+  start and its actual date cannot be recovered, do not assign run start as its
+  entry date. Missing observations do not remove the model table; label any
+  observed dates/DAP separately from simulated values.
+
+## Shoot-to-root ratio
+
+Use `SHOOT_C_pft / Root_C_pft` as the default **carbon-based** shoot-to-root
+ratio (g shoot C / g root C), after checking the selected executable's pool
+definitions. In the inspected implementation, both fields are area-normalized
+stocks from `ShootElms_pft` and `RootElms_pft` in `HistUpdatePlant.F90`;
+`PlantBalMod.F90` constructs the pools. `Root_C_pft` includes structural and
+nonstructural root C and excludes root nodules. Do not silently replace it with
+`RootST_C_pft`, a fine-root-only pool or an unintegrated `RootC_pvr` density.
+Record the shoot's reproductive/storage inclusion and any nodule, mycorrhizal
+or dead-pool exclusions. A structural, vegetative-only or nodule-inclusive ratio
+is a separately defined diagnostic requiring matching component outputs.
+
+- Show shoot and root stocks with the ratio, using a common growing-season or
+  live-cohort mask. Mark ratios undefined for masked/nonfinite data or root C
+  at/below a documented small-denominator threshold. Report the threshold and
+  excluded support; never turn 0/0 into zero or hide invalid roots by clipping.
+- Ratios of daily mean stocks are **ratios of daily means**, not means of
+  hourly ratios. State whether a seasonal summary averages valid daily ratios
+  or divides matched-period mean stocks; do not confuse the two.
+- Compute per-PFT ratios first. For a stand ratio, divide the sums of shoot and
+  root C on a verified common area basis rather than averaging PFT ratios.
+  Use matched calendar periods and relevant phenological milestones for
+  control/test comparisons; separate growth allocation from harvest, tissue
+  turnover and root loss. A stock ratio is not a shoot/root allocation flux.
+- Match observed organ, root-depth and living/structural definitions. A carbon
+  ratio is not automatically a dry-mass ratio: with distinct carbon fractions,
+  `S:R_dry = (shoot_C / root_C) * (fC_root / fC_shoot)`. Document the fractions
+  and pool compatibility before comparison; retain model-only analysis when
+  suitable root observations are unavailable.
+
+## Excessive height
+
+When canopy height is excessive, check both `SSL1` and `SNL1` in the selected
+PFT file and read-only trait output before recommending unrelated physiology
+or leaf-area changes. `SSL1` scales petiole/sheath extension; `SNL1` scales
+stem internode extension. These are growth-allometry coefficients, not measured
+organ lengths: biomass exponents, growth allocation, etiolation and angular
+projection also enter the equations.
+
+Compare `CAN_HT_pft` and `Stalk_HT_pft` on the same dates, including stalk height
+at the canopy-height peak. Canopy height includes petiole and leaflet elevation;
+the difference is not petiole length alone. Large canopy-minus-stalk excess
+prioritizes petiole geometry/`SSL1` and height assembly; excessive stalk height
+prioritizes internodes/`SNL1`, node number, branching and biomass allocation.
+Inspect node-level lengths where available, and retain potential geometry or
+unit errors rather than compensating for them through tuning. Match literature
+by organ, stage, cultivar and angle reference. Keep LAI, leaf protein/capacity,
+GPP timing and energy fluxes in the comparison: shorter plants do not establish
+better emergence or carbon fluxes. Label combined SSL1/SNL1 perturbations as a
+joint response, not separate attribution; do not transfer case-specific tested
+values as defaults.
 
 ## Hydraulics and parameter diagnosis
 

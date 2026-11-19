@@ -1,4 +1,4 @@
 interface:
   display_name: "EcoSIM Plant History Evaluation"
   short_description: "Evaluate plant physiology from EcoSIM history"
-  default_prompt: "Use $ecosim-plant-history-evaluation to evaluate EcoSIM plant history against selected traits, model equations, and site observations, with seasonal diagnostics and supported tuning priorities."
+  default_prompt: "Use $ecosim-plant-history-evaluation to evaluate EcoSIM plant history, including height, GPP, leaf N, phenological development, and shoot-to-root ratio, against selected traits, model equations, and available site observations; for crops, always include a table of stage-entry dates and days after planting, and report missing diagnostics and supported tuning priorities."

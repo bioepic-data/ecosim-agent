@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -12,9 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from plant_class_validation import CLASS_CODES, CLASS_SECTION, THERMAL_FIELDS, class_records, load_pft_values, decode, constraint_match
 
 SECTION_NAMES = {
     "PLANT CLASS INFORMATION",
+    "THERMAL PROPERTIES",
     "PHOTOSYNTHETIC PROPERTIES",
     "OPTICAL PROPERTIES",
     "PHENOLOGICAL PROPERTIES",
@@ -26,7 +30,7 @@ SECTION_NAMES = {
     "ORGAN N AND P CONCENTRATIONS",
 }
 
-REQUIRED_SECTIONS = tuple(SECTION_NAMES)
+REQUIRED_SECTIONS = tuple(SECTION_NAMES - {"THERMAL PROPERTIES"})  # Optional in older model output.
 
 BLOCK_RE = re.compile(
     r"^\s*PLANT traits for FUNCTIONAL TYPE \(NZ,NY,NX\)=\s+"
@@ -35,7 +39,7 @@ BLOCK_RE = re.compile(
 
 CLASS_LINE_RE = re.compile(r"^\s*(?P<idx>\d+)\|\s*(?P<var>[^:]+):\s*(?P<rest>.*)$")
 NUMERIC_LINE_RE = re.compile(r"^\s*(?P<idx>\d+):\s*(?P<var>[^|:]+)(?:\|\s*(?P<rest>.*))?$")
-NUMBER_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?")
+NUMBER_RE = re.compile(r"(?<![A-Za-z_])[-+]?(?:nan\b|inf(?:inity)?\b|(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?)", re.I)
 
 FRACTION_VARS = {
     "RUBP",
@@ -121,7 +125,10 @@ C3_RUBISCO_LEAF_N_FRACTION_WARN_RANGE = (0.08, 0.30)
 PHYSIOLOGY_PATHWAY_RANGES = {
     "C4": {
         "XKCO2": (10.0, 35.0, "Rubisco aqueous CO2 Km at 25 C"),
-        "XKO2": (120.0, 400.0, "Rubisco aqueous O2 Km at 25 C"),
+        # Cousins et al. 2010, Table 2, reports maize Ko=183 +/-19 uM
+        # and tabulates earlier maize estimates up to 810 uM. A universal
+        # 400 uM ceiling incorrectly rejects a published kinetic family.
+        "XKO2": (100.0, 1000.0, "Rubisco aqueous O2 Km at 25 C"),
         "XKCO24": (0.5, 20.0, "effective aqueous CO2 Km for PEPC at 25 C"),
         "FCO2": (0.25, 0.50, "intercellular-to-atmospheric CO2 ratio"),
         "fCHLMESO": (0.40, 0.75, "fraction of chlorophyll-bound protein in mesophyll cells"),
@@ -134,9 +141,16 @@ PHYSIOLOGY_PATHWAY_RANGES = {
 }
 
 RUBISCO_SPECIFICITY_WARN_RANGE = (70.0, 140.0)
-C4_CARBOXYLATION_TO_OXYGENATION_WARN_RANGE = (6.0, 14.0)
-C3_CARBOXYLATION_TO_OXYGENATION_WARN_RANGE = (2.0, 8.0)
-C4_VPMAX_TO_VCMAX_WARN_RANGE = (0.8, 2.5)
+# Broad screens encompass assay families, not one preferred calibration:
+# Cousins et al. 2010, doi:10.1111/j.1365-3040.2009.02095.x, Table 2:
+# maize Vo/Vc=0.11 and legacy0.30; cited C3 estimates extend to0.77.
+# Perdomo et al.2016, doi:10.3389/fpls.2016.01719, Table 3:
+# maize Vpmax/Vcmax includes133.8/29.9 and219.5/31.7 at the stated conditions.
+# Retain the joint specificity and protein-allocation checks; values within
+# these envelopes are not thereby validated for a particular cultivar/site.
+C4_CARBOXYLATION_TO_OXYGENATION_WARN_RANGE = (2.0, 16.0)
+C3_CARBOXYLATION_TO_OXYGENATION_WARN_RANGE = (1.0, 8.0)
+C4_VPMAX_TO_VCMAX_WARN_RANGE = (0.8, 8.0)
 C4_JMAX_TO_VCMAX_WARN_RANGE = (4.0, 8.0)
 C3_JMAX_TO_VCMAX_WARN_RANGE = (1.2, 3.0)
 LOW_PRIORITY_PHYSIOLOGY_PARAMETERS = {"ETMX*CHL/VCMX*RUBP"}
@@ -350,6 +364,7 @@ NO_PETIOLE_SHEATH_LABEL_TOKENS = (
 )
 
 ANGSH_ZERO_TOLERANCE = 1.0e-6
+SOYBEAN_ANGSH_USER_DEFAULT = 45.0  # User instruction, 2026-11-13; degrees from horizontal.
 SECONDS_PER_HOUR = 3600.0
 CONIFER_RSRR_WARN_RANGE_MPA_H_PER_M = (1000.0, 10000.0)
 ROOT_RADIAL_CONDUCTIVITY_BROAD_RANGE_M_PER_S_MPA = (4.7e-9, 1.2e-5)
@@ -380,6 +395,7 @@ class PlantBlock:
     koppen: str = ""
     sections: Dict[str, List[Parameter]] = field(default_factory=dict)
     parameters: List[Parameter] = field(default_factory=list)
+    class_validation: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def short_code(self) -> str:
@@ -420,7 +436,7 @@ def numeric_values(raw_value: str) -> List[float]:
     values = []
     for match in NUMBER_RE.finditer(raw_value):
         try:
-            values.append(float(match.group(0)))
+            values.append(float(re.sub('[dD]', 'e', match.group(0))))
         except ValueError:
             continue
     return values
@@ -496,6 +512,12 @@ def parse_desc(path: Path) -> List[PlantBlock]:
             current.sections.setdefault(stripped, [])
             continue
 
+        # Unknown future sections must not leak numeric rows into categorical class data.
+        if re.fullmatch(r'[A-Z][A-Z /&()-]*(?:PROPERTIES|PARAMETERS|CHARACTERISTICS|INFORMATION)', stripped):
+            current_section = stripped
+            current.sections.setdefault(stripped, [])
+            continue
+
         if stripped.startswith("Plant name") and ":" in line:
             current.plant_name = line.rsplit(":", 1)[1].strip()
             continue
@@ -531,7 +553,8 @@ def first_value(params: Dict[str, List[Parameter]], variable: str) -> Optional[f
     return None
 
 
-def check_blocks(blocks: Iterable[PlantBlock]) -> List[Finding]:
+def check_blocks(blocks: Iterable[PlantBlock], evidence=None, pft_values=None,
+                 require_class_evidence: bool = False) -> List[Finding]:
     findings: List[Finding] = []
 
     def add(
@@ -562,6 +585,8 @@ def check_blocks(blocks: Iterable[PlantBlock]) -> List[Finding]:
         for section in REQUIRED_SECTIONS:
             if section not in block.sections:
                 add(block, "ERROR", section, block.start_line, f"missing required section {section!r}")
+        for section in block.sections.keys() - SECTION_NAMES:
+            add(block, "WARN", section, block.start_line, "unrecognized section: numeric parsing applied, scientific validation is unresolved")
 
         for parameter in block.parameters:
             if parameter.section == "PLANT CLASS INFORMATION":
@@ -573,10 +598,41 @@ def check_blocks(blocks: Iterable[PlantBlock]) -> List[Finding]:
                 if not math.isfinite(value):
                     add(block, "ERROR", parameter.variable, parameter.line, f"value is not finite: {value!r}")
 
+        rules = []
+        for plant_rule in (evidence or {}).get('plants', []):
+            if isinstance(plant_rule, dict) and evidence_matches_block(block, plant_rule):
+                rules.extend(with_plant_context(plant_rule, r) for r in iter_rules(
+                    plant_rule, 'categorical_expectations', 'categories', 'numeric_ranges', 'ranges')
+                    if r.get('variable') in CLASS_CODES)
+        block.class_validation = class_records(block, rules, (pft_values or {}).get(block.code))
+        for record in block.class_validation:
+            if record['model_status'] == 'invalid':
+                add(block, 'ERROR', record['variable'], record['line'], '; '.join(record['messages']), 'class-validation')
+            elif record['model_status'] == 'unresolved':
+                add(block, 'ERROR' if require_class_evidence else 'WARN', record['variable'], record['line'],
+                    '; '.join(record['messages']), 'class-validation')
+            if record['evidence_status'] == 'contradicted':
+                add(block, 'ERROR' if require_class_evidence else 'WARN', record['variable'], record['line'],
+                    'class value contradicts supplied source-backed evidence; see class validation audit', 'class-evidence')
+        unresolved = [r['variable'] for r in block.class_validation if r['evidence_status'] == 'unresolved']
+        if unresolved:
+            add(block, 'ERROR' if require_class_evidence else 'WARN', CLASS_SECTION, block.start_line,
+                'ecological/model-mapping validation unresolved for: '+', '.join(unresolved)+
+                '; each item needs an applicable, cited expectation; valid codes alone are not validation', 'class-evidence')
+
+        if 'THERMAL PROPERTIES' in block.sections:
+            for key in THERMAL_FIELDS:
+                values = params.get(key, [])
+                if len(values) != 1:
+                    add(block, 'ERROR', key, block.start_line, 'thermal readback requires exactly one row')
+                elif len(values[0].numeric_values) != 1 or not math.isfinite(values[0].numeric_values[0]) or values[0].numeric_values[0] <= 0:
+                    add(block, 'ERROR', key, values[0].line, 'thermal energy must be a finite positive scalar [J mol-1]')
+
         check_class(block, params, add)
         check_class_information_conventions(block, params, add)
-        check_embryophyte_type(block, params, add)
-        check_snow_interception_pattern(block, params, add)
+        model_valid = {r['variable'] for r in block.class_validation if r['model_status'] == 'valid'}
+        if 'IEBTYP' in model_valid: check_embryophyte_type(block, params, add)
+        if 'ISNTYP' in model_valid: check_snow_interception_pattern(block, params, add)
         check_variable_ranges(block, params, add)
         check_petiole_sheath_angle(block, params, add)
         check_cross_parameters(block, params, add)
@@ -585,6 +641,17 @@ def check_blocks(blocks: Iterable[PlantBlock]) -> List[Finding]:
         check_active_structural_protein_pools(block, params, add)
         check_physiological_parameterization(block, params, add)
         check_woody_form(block, params, add)
+        # Existing taxonomic/canopy screens must not be hidden by a passing
+        # supplied evidence rule in the new per-item verdict.
+        for finding in findings:
+            if (finding.pft_code, finding.nz, finding.ny, finding.nx) != (block.code, block.nz, block.ny, block.nx):
+                continue
+            if finding.parameter in CLASS_CODES and finding.category not in ('class-validation','class-evidence'):
+                record = next(r for r in block.class_validation if r['variable']==finding.parameter)
+                record.setdefault('screen_findings', []).append(finding.message)
+                if record['status'] != 'invalid':
+                    record['status'] = 'invalid' if finding.severity=='ERROR' else 'contradicted'
+                if require_class_evidence: finding.severity='ERROR'
 
     return sort_findings(findings)
 
@@ -897,6 +964,22 @@ def check_variable_ranges(block: PlantBlock, params: Dict[str, List[Parameter]],
 
 
 def check_petiole_sheath_angle(block: PlantBlock, params: Dict[str, List[Parameter]], add) -> None:
+    if block.short_code == "soyb":
+        for parameter in params.get("ANGSH", []):
+            for value in parameter.numeric_values:
+                if abs(value - SOYBEAN_ANGSH_USER_DEFAULT) > ANGSH_ZERO_TOLERANCE:
+                    add(
+                        block,
+                        "WARN",
+                        "ANGSH",
+                        parameter.line,
+                        f"soybean ANGSH differs from the user default (2026-11-13): "
+                        f"expected 45 degrees from horizontal, found {value:g}; "
+                        "retain explicitly requested sensitivities and report the deviation, "
+                        "not a physiological error or literature violation",
+                        "user-default",
+                    )
+
     if not block_lacks_petiole_or_sheath(block):
         return
 
@@ -1490,7 +1573,7 @@ def check_woody_form(block: PlantBlock, params: Dict[str, List[Parameter]], add)
                 )
 
 
-def check_web_evidence(blocks: Iterable[PlantBlock], evidence: Dict[str, Any]) -> List[Finding]:
+def check_web_evidence(blocks: Iterable[PlantBlock], evidence: Dict[str, Any], include_class: bool = True) -> List[Finding]:
     """Compare trait values to web-sourced evidence already converted to EcoSIM units."""
 
     findings: List[Finding] = []
@@ -1520,8 +1603,10 @@ def check_web_evidence(blocks: Iterable[PlantBlock], evidence: Dict[str, Any]) -
         for block in matching_blocks:
             params = by_var(block)
             for range_rule in iter_rules(plant_rule, "numeric_ranges", "ranges"):
+                if not include_class and range_rule.get('variable') in CLASS_CODES: continue
                 check_web_numeric_range(block, params, with_plant_context(plant_rule, range_rule), add)
             for categorical_rule in iter_rules(plant_rule, "categorical_expectations", "categories"):
+                if not include_class and categorical_rule.get('variable') in CLASS_CODES: continue
                 check_web_categorical(block, params, with_plant_context(plant_rule, categorical_rule), add)
 
     return sort_findings(findings)
@@ -1602,6 +1687,16 @@ def check_web_categorical(block: PlantBlock, params: Dict[str, List[Parameter]],
     matching_params = params.get(variable, [])
     if not matching_params:
         add(block, severity, variable, block.start_line, f"web evidence expects {variable}, but the trait is absent{evidence_suffix(rule)}")
+        return
+
+    if variable in CLASS_CODES:
+        for parameter in matching_params:
+            value, _, _ = decode(variable, parameter)
+            verdict = constraint_match(dict(variable=variable, raw_value=parameter.raw_value, value=value), rule)
+            if verdict is None:
+                add(block, severity, variable, parameter.line, 'class evidence condition is unusable or requires numeric PFT readback'+evidence_suffix(rule))
+            elif not verdict:
+                add(block, severity, variable, parameter.line, 'class value does not satisfy web-evidence expectation'+evidence_suffix(rule))
         return
 
     allowed = rule.get("allowed_values")
@@ -1704,6 +1799,7 @@ def block_summary(block: PlantBlock, findings: List[Finding]) -> Dict[str, objec
         **root_conduit_geometry(params),
         "errors": sum(1 for f in block_findings if f.severity == "ERROR"),
         "warnings": sum(1 for f in block_findings if f.severity == "WARN"),
+        "class_information_validation": block.class_validation or class_records(block),
     }
 
 
@@ -1716,6 +1812,8 @@ def render_markdown(
     nx: int,
     web_evidence: Optional[Path],
     strict_physiology: bool,
+    pft_file: Optional[Path] = None,
+    require_class_evidence: bool = False,
 ) -> str:
     errors = sum(1 for f in findings if f.severity == "ERROR")
     warnings = sum(1 for f in findings if f.severity == "WARN")
@@ -1727,6 +1825,8 @@ def render_markdown(
         f"- Plant blocks checked: {len(selected)} of {len(blocks)} total blocks",
         f"- Web evidence: `{web_evidence}`" if web_evidence else "- Web evidence: not provided",
         f"- Strict physiology: {'enabled' if strict_physiology else 'disabled'}",
+        f"- Complete class evidence required: {require_class_evidence}",
+        f"- Numeric class readback: {pft_file or 'not supplied; decoded from printed labels where unambiguous'}",
         f"- Findings: {errors} ERROR, {warnings} WARN",
         "",
         "## Findings",
@@ -1766,6 +1866,11 @@ def render_markdown(
             f"{summary['section_count']} sections, {summary['errors']} ERROR, {summary['warnings']} WARN"
             f"{rsrr_summary}{conduit_summary}"
         )
+        lines.extend(['', '| Class item | Value | Model validity | Evidence | Verdict |',
+                      '| --- | --- | --- | --- | --- |'])
+        for row in summary['class_information_validation']:
+            raw = row['raw_value'].replace('|', '\\|')
+            lines.append(f"| {row['variable']} | {raw} | {row['model_status']} | {row['evidence_status']} | {row['status']} |")
 
     return "\n".join(lines) + "\n"
 
@@ -1779,12 +1884,21 @@ def build_json(
     nx: int,
     web_evidence: Optional[Path],
     strict_physiology: bool,
+    pft_file: Optional[Path] = None,
+    require_class_evidence: bool = False,
 ) -> Dict[str, object]:
+    classifications = [r for block in selected for r in (block.class_validation or class_records(block))]
+    counts = {s:sum(r['status']==s for r in classifications) for s in ('validated','unresolved','invalid','contradicted')}
     return {
         "source_file": str(path),
         "grid_scope": {"ny": ny, "nx": nx},
         "web_evidence_file": str(web_evidence) if web_evidence else None,
         "strict_physiology": strict_physiology,
+        "require_class_evidence": require_class_evidence,
+        "class_information_verdict": 'validated' if classifications and counts['validated']==len(classifications) else 'incomplete_or_conflicted',
+        "class_information_counts": counts,
+        "pft_file": str(pft_file) if pft_file else None,
+        "pft_file_sha256": hashlib.sha256(pft_file.read_bytes()).hexdigest() if pft_file else None,
         "total_blocks": len(blocks),
         "checked_blocks": len(selected),
         "finding_counts": {
@@ -1802,6 +1916,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--ny", type=int, default=1, help="NY grid index to check; default: 1")
     parser.add_argument("--nx", type=int, default=1, help="NX grid index to check; default: 1")
     parser.add_argument("--web-evidence", type=Path, help="JSON file of web-sourced trait evidence converted to EcoSIM units")
+    parser.add_argument('--pft-file', type=Path, help='Optional selected PFT NetCDF for numeric class-code readback; not proof of historical input identity')
+    parser.add_argument('--require-class-evidence', action='store_true',
+                        help='Fail when any class item lacks valid model encoding and applicable cited evidence')
     parser.add_argument(
         "--strict-physiology",
         action="store_true",
@@ -1825,7 +1942,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         return 2
 
-    findings = check_blocks(selected)
     web_evidence = None
     if args.web_evidence is not None:
         if not args.web_evidence.exists():
@@ -1836,7 +1952,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         except json.JSONDecodeError as exc:
             print(f"ERROR: could not parse web evidence JSON: {exc}", file=sys.stderr)
             return 2
-        findings = sort_findings(findings + check_web_evidence(selected, web_evidence))
+        if not isinstance(web_evidence, dict) or not isinstance(web_evidence.get('plants', []), list):
+            print('ERROR: evidence must be an object with a plants list', file=sys.stderr)
+            return 2
+
+    try:
+        pft_values = load_pft_values(args.pft_file, selected) if args.pft_file else None
+    except (OSError, ValueError, TypeError, KeyError, ImportError) as exc:
+        print(f'ERROR: cannot validate selected PFT class readback: {exc}', file=sys.stderr)
+        return 2
+    findings = check_blocks(selected, web_evidence, pft_values, args.require_class_evidence)
+    if web_evidence is not None:
+        findings = sort_findings(findings + check_web_evidence(selected, web_evidence, include_class=False))
 
     if args.strict_physiology:
         findings = enforce_strict_physiology(findings)
@@ -1853,6 +1980,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                     args.nx,
                     args.web_evidence,
                     args.strict_physiology,
+                    args.pft_file,
+                    args.require_class_evidence,
                 ),
                 indent=2,
             )
@@ -1868,6 +1997,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 args.nx,
                 args.web_evidence,
                 args.strict_physiology,
+                args.pft_file,
+                args.require_class_evidence,
             ),
             end="",
         )

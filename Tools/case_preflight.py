@@ -333,7 +333,16 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
     def grid_check():
         nonlocal grid_bounds, koppen
         with nc.Dataset(selected['grid_file_in']) as ds:
-            schema = required_reads(model / 'f90src/IOutils/readimod.F90', 'grid_nfid', ['fAeroScalar'])
+            # These profiles are read only by the selected van Genuchten scheme.
+            scheme = str(eco.get('soil_hydraulic_scheme', 'ecosim')).strip().lower()
+            if scheme not in ('ecosim', 'van_genuchten', 'van_genuchten_mualem'):
+                raise ValueError(f'Unsupported soil_hydraulic_scheme: {scheme}')
+            optional = {'fAeroScalar', 'VG_ALPHA', 'VG_N', 'VG_THETA_R', 'VG_L'}
+            schema = required_reads(model / 'f90src/IOutils/readimod.F90', 'grid_nfid', optional)
+            if scheme != 'ecosim':
+                schema.update(('VG_ALPHA', 'VG_N', 'VG_THETA_R'))
+                if 'VG_L' in ds.variables:
+                    schema.add('VG_L')
             require(ds, schema)
             layers = {int(v) for v in re.findall(r'(?im)^\s*JZ\s*=\s*(\d+)', source_text(model / 'f90src/Mesh/GridMod.F90'))}
             if len(layers) != 1 or 'nlevs' not in ds.dimensions or len(ds.dimensions['nlevs']) != next(iter(layers)):

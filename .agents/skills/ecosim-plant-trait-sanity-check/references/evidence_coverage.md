@@ -7,6 +7,13 @@ zero warnings must never stand in for a completed literature review.
 
 ## Required coverage table
 
+`PLANT CLASS INFORMATION` additionally requires the per-item
+[class validation contract](class_information_validation.md): all 14 fields need
+model validity and a source-backed expectation/mapping. Do not cover the entire
+section with one "identity reviewed" row. Preserve unresolved, prescribed and
+contradicted items separately; use `--require-class-evidence` for comprehensive
+validation and scientific readiness.
+
 Before a comprehensive plant-trait review or a scientific run-readiness claim,
 create a sidecar table/JSON for each active PFT at the selected grid. Cover:
 
