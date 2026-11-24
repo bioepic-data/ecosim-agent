@@ -52,7 +52,19 @@ Planting string:
 
 ```text
 DDMMYYYY Planting_population Planting_depth
+DDMMYYYY Planting_population Planting_depth Maximum_population
+DDMMYYYY Planting_population Planting_depth Read_GROUPX GROUPX
 ```
+
+The five-field form uses `Read_GROUPX=1` to override the trait-table GROUPX for
+that PFT/year; `0` keeps the trait value. Enabled GROUPX must be finite and
+nonnegative. This override is applied before deriving maturity thresholds and
+is shown in the trait diagnostics. Three- and four-field records use trait GROUPX.
+The fourth field in the four-field form remains maximum population; maximum
+population and GROUPX overrides cannot be combined in the current format.
+JSON planting blocks use the optional keys `Maximum_population`, or both
+`Read_GROUPX` and `GROUPX`. Excel uses the matching optional columns below;
+older workbooks without those columns remain supported.
 
 Natural ecosystem default:
 
@@ -153,6 +165,9 @@ pft_type
 planting_DDMMYYYY
 Planting_population
 Planting_depth
+Maximum_population
+Read_GROUPX
+GROUPX
 nmgnts
 ```
 

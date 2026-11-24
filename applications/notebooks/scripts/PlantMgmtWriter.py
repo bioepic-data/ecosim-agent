@@ -8,6 +8,7 @@ JSON format expected:
     DDMMYYYY
     Planting_population
     Planting_depth
+    optional Maximum_population, or both Read_GROUPX and GROUPX
 - mgmt block:
     DDMMYYYY
     iHarvType
@@ -26,6 +27,8 @@ JSON format expected:
 Output string formats:
 - pft_pltinfo:
     "DDMMYYYY Planting_population Planting_depth"
+    "DDMMYYYY Planting_population Planting_depth Maximum_population"
+    "DDMMYYYY Planting_population Planting_depth Read_GROUPX GROUPX"
 - each pft_mgmt line:
     "DDMMYYYY,iHarvType,jHarvType,CutHeight,FractionCut,
      FineFractionLeafHarvested_pft,FineFractionNonleafHarvested_pft,
@@ -37,6 +40,7 @@ Output string formats:
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List
@@ -125,7 +129,21 @@ def build_pft_pltinfo(pft: Dict[str, Any]) -> str:
     date_str = fmt_date_ddmmyyyy(planting["DDMMYYYY"])
     population = fmt_number(planting["Planting_population"])
     depth = fmt_number(planting["Planting_depth"])
-    return f"{date_str} {population} {depth}"
+    record = f"{date_str} {population} {depth}"
+    has_group = "Read_GROUPX" in planting or "GROUPX" in planting
+    if "Maximum_population" in planting:
+        if has_group:
+            raise ValueError("Maximum_population and GROUPX options require different planting record forms")
+        return record + " " + fmt_number(planting["Maximum_population"])
+    if has_group:
+        flag = float(planting["Read_GROUPX"])
+        group = float(planting["GROUPX"])
+        if flag not in (0, 1):
+            raise ValueError("Read_GROUPX must be 0 or 1")
+        if flag == 1 and (not math.isfinite(group) or group < 0):
+            raise ValueError("Enabled GROUPX must be finite and nonnegative")
+        return record + f" {int(flag)} " + fmt_number(group)
+    return record
 
 
 def build_mgmt_line(mgmt: Dict[str, Any]) -> str:

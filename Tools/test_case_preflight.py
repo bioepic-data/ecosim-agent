@@ -184,6 +184,39 @@ stop_option='nyears'
             dst['year'][:] = [1999]
         scratch.replace(source)
 
+    def test_constant_recurring_zero_year_dates_follow_model_calendar(self):
+        self.constant_plant_file()
+        with nc.Dataset(self.root/'plant.nc', 'a') as ds:
+            ds['nmgnts'][0,0,0] = 1
+            text = '28020000 0 0 1000 0 1 1 1 0 0 0 0 0'
+            ds['pft_mgmt'][0,0,0,0,:len(text)] = np.array(list(text), dtype='S1')
+        self.assertFalse(self.errors())
+        with nc.Dataset(self.root/'plant.nc', 'a') as ds:
+            ds['pft_mgmt'][0,0,0,0,:8] = np.array(list('29020000'), dtype='S1')
+        self.assertTrue(any(f['category']=='plant_management' for f in self.errors()))
+        with self.assertRaises(ValueError):
+            pre.validate_events({'DDMMYYYY':'28020000'})
+
+    def test_multiple_columns_share_standalone_weather_and_validate_every_soil(self):
+        for filename in ['grid.nc','plant.nc','soil.nc']:
+            src=self.root/filename;tmp=self.root/('two-'+filename)
+            with nc.Dataset(src) as a,nc.Dataset(tmp,'w') as b:
+                for name,dim in a.dimensions.items():
+                    b.createDimension(name,2 if name=='ntopou' else len(dim))
+                for name,var in a.variables.items():
+                    w=b.createVariable(name,var.dtype,var.dimensions,
+                                       fill_value=getattr(var,'_FillValue',None))
+                    w.setncatts({k:var.getncattr(k) for k in var.ncattrs() if k!='_FillValue'})
+                    data=var[:]
+                    if 'ntopou' in var.dimensions:
+                        data=np.ma.concatenate([data,data],axis=var.dimensions.index('ntopou'))
+                    w[...] = data
+                for name in ['NH1','NH2']:b[name][:]=[1,2]
+            tmp.replace(src)
+        self.assertFalse(self.errors())  # one weather grid; both treatment columns
+        self.edit('grid.nc','BKDSI',(1,0),-9999)
+        self.assertTrue(any('Topographic unit 2' in f['message'] for f in self.errors()))
+
     def test_constant_vegetation_does_not_need_annual_coverage(self):
         self.constant_plant_file()
         self.assertFalse(self.errors())

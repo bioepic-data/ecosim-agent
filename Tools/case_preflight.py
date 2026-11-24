@@ -149,18 +149,24 @@ def bounds(ds, grid_bounds=None):
     return result
 
 
-def validate_events(obj):
+def validate_events(obj, recurring_years=None):
+    """Check dates, resolving constant-management year 0000 on runtime years."""
     if isinstance(obj, list):
         for item in obj:
-            validate_events(item)
+            validate_events(item, recurring_years)
     elif isinstance(obj, dict):
         for key, val in obj.items():
             if key in ('DDMMYYYY', 'DST', 'DEN') and val:
-                datetime.strptime(str(val).zfill(8), '%d%m%Y')
+                date = str(val).zfill(8)
+                if key == 'DDMMYYYY' and date[-4:] == '0000' and recurring_years:
+                    for year in recurring_years:
+                        datetime.strptime(date[:4] + f'{year:04d}', '%d%m%Y')
+                else:
+                    datetime.strptime(date, '%d%m%Y')
             elif isinstance(val, (float, int)) and not np.isfinite(val):
                 raise ValueError(f'Non-finite management value {key}')
             else:
-                validate_events(val)
+                validate_events(val, recurring_years)
 
 
 def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None):
@@ -348,7 +354,11 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
             if len(layers) != 1 or 'nlevs' not in ds.dimensions or len(ds.dimensions['nlevs']) != next(iter(layers)):
                 raise ValueError(f'nlevs must match the standalone GridMod JZ setting {sorted(layers)}')
             grid_bounds = bounds(ds)
-            koppen = checked_numbers(ds['IETYPG']).reshape(-1).astype(int)
+            # readsiteNC selects site record 1 and broadcasts it to all columns.
+            site_koppen = checked_numbers(ds['IETYPG']).reshape(-1)
+            if not site_koppen.size or site_koppen[0] != int(site_koppen[0]):
+                raise ValueError('IETYPG requires an integer site climate code')
+            koppen = np.full(len(grid_bounds), int(site_koppen[0]), dtype=int)
             for name in schema:
                 if ds[name].dtype.kind in 'iuf':
                     var = ds[name]
@@ -380,8 +390,10 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
             if key in selected:
                 def check_grid_support():
                     with nc.Dataset(selected[key]) as ds:
-                        if 'ngrid' not in ds.dimensions or len(ds.dimensions['ngrid']) != cells:
-                            raise ValueError(f'{key}: climate ngrid does not match the grid cell count {cells}')
+                        # ClimReadMod broadcasts one forcing point to all columns;
+                        # both standalone readers explicitly reject ngrid != 1.
+                        if 'ngrid' not in ds.dimensions or len(ds.dimensions['ngrid']) != 1:
+                            raise ValueError(f'{key}: standalone ClimReadMod requires climate ngrid=1; it is shared by {cells} columns')
                 check('spatial_support', check_grid_support)
 
     def pft_check():
@@ -492,7 +504,7 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
                 if np.any(vals < 0) or np.any(vals > 24) or np.any(vals != vals.astype(int)):
                     raise ValueError('nmgnts exceeds event capacity or is not a nonnegative integer')
         cfg = bridge.nc_to_config(selected['pft_mgmt_in'])
-        validate_events(cfg)
+        validate_events(cfg, recurring_years=model_years if flag == 0 else None)
         enum_text = source_text(model / 'f90src/Modelconfig/ElmIDMod.F90')
         def enum(prefix):
             return {int(v) for v in re.findall(r'(?im)integer,\s*parameter\s*::\s*' + prefix + r'\w*\s*=\s*(-?\d+)', enum_text)}

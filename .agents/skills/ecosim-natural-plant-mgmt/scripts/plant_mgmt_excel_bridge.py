@@ -32,6 +32,9 @@ PFT_COLUMNS = [
     "planting_DDMMYYYY",
     "Planting_population",
     "Planting_depth",
+    "Maximum_population",
+    "Read_GROUPX",
+    "GROUPX",
     "nmgnts",
 ]
 
@@ -112,13 +115,24 @@ def parse_planting(value: str) -> dict[str, Any]:
     if not s:
         return {}
     parts = [p for p in re.split(r"[\s,]+", s) if p]
-    if len(parts) != 3:
-        raise ValueError(f"Planting string must have 3 fields: {value!r}")
-    return {
+    if len(parts) not in (3, 4, 5):
+        raise ValueError(f"Planting string must have 3, 4 or 5 fields: {value!r}")
+    planting = {
         "DDMMYYYY": date_value(parts[0]),
         "Planting_population": number_value(parts[1], "Planting_population"),
         "Planting_depth": number_value(parts[2], "Planting_depth"),
     }
+    if len(parts) == 4:
+        planting["Maximum_population"] = number_value(parts[3], "Maximum_population")
+    elif len(parts) == 5:
+        flag = real_value(parts[3], "Read_GROUPX")
+        if flag not in (0, 1):
+            raise ValueError("Read_GROUPX must be 0 or 1")
+        group = real_value(parts[4], "GROUPX")
+        if flag == 1 and (not np.isfinite(group) or group < 0):
+            raise ValueError("Enabled GROUPX must be finite and nonnegative")
+        planting.update(Read_GROUPX=int(flag), GROUPX=group)
+    return planting
 
 
 def parse_mgmt(value: str) -> dict[str, Any]:
@@ -145,13 +159,16 @@ def parse_mgmt(value: str) -> dict[str, Any]:
     }
 
 
-def build_planting(planting: dict[str, Any]) -> tuple[Any, Any, Any]:
+def build_planting(planting: dict[str, Any]) -> tuple[Any, ...]:
     if not planting:
-        return "", "", ""
+        return ("",) * 6
     return (
         date_value(planting.get("DDMMYYYY", "")),
         clean_value(planting.get("Planting_population", "")),
         clean_value(planting.get("Planting_depth", "")),
+        clean_value(planting.get("Maximum_population", "")),
+        clean_value(planting.get("Read_GROUPX", "")),
+        clean_value(planting.get("GROUPX", "")),
     )
 
 
@@ -230,7 +247,7 @@ def config_to_sheet_rows(cfg: dict[str, Any]) -> dict[str, list[list[Any]]]:
         for year in sorted((int(y) for y in year_blocks.keys())):
             pfts = year_blocks[str(year)].get("pfts", [])
             for ipft, pft in enumerate(pfts, start=1):
-                planting_date, planting_pop, planting_depth = build_planting(pft.get("planting", {}))
+                planting_fields = build_planting(pft.get("planting", {}))
                 mgmts = pft.get("mgmt", [])
                 pft_rows.append(
                     [
@@ -238,9 +255,7 @@ def config_to_sheet_rows(cfg: dict[str, Any]) -> dict[str, list[list[Any]]]:
                         itu,
                         ipft,
                         pft.get("pft_type", ""),
-                        planting_date,
-                        planting_pop,
-                        planting_depth,
+                        *planting_fields,
                         len(mgmts),
                     ]
                 )
@@ -329,6 +344,9 @@ def sheet_rows_to_config(sheets: dict[str, list[list[Any]]]) -> dict[str, Any]:
                 "Planting_population": number_value(row.get("Planting_population"), "Planting_population"),
                 "Planting_depth": number_value(row.get("Planting_depth"), "Planting_depth"),
             }
+            for key in ("Maximum_population", "Read_GROUPX", "GROUPX"):
+                if text_value(row.get(key, "")):
+                    planting[key] = number_value(row[key], key)
         pft_by_key[(topou, year, pft_slot)] = {
             "pft_type": text_value(row.get("pft_type")),
             "planting": planting,
