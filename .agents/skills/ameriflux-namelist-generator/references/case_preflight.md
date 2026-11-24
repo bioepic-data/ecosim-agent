@@ -42,12 +42,21 @@ The gate blocks on:
 - Incompatible PFT table/management identifiers (including the grid Koppen
   override), active/event counts, malformed event strings, invalid dates,
   harvest enums and fractions, or missing annual management records. Constant plant management (`pft_dflag=0`)
-  is supported with one reusable year record; its year label need not cover the
-  forcing calendar. Bounds, PFT identifiers, planting strings and event counts
-  still pass the same checks.
+  consumes the first stored record and does not require a year coordinate or
+  forcing-year coverage. Extra constant-mode records are not consumed or
+  validated. Bounds, active PFT identifiers, planting strings and event counts
+  in the selected record still pass the same checks.
 - Missing soil-management selector targets or malformed records; monthly GHG
   gaps/units or coverage missing **model years**, including spin-up, rather
   than merely the cycled weather years.
+
+An empty soil-management `year` dimension follows `ReadSoilMgmnt`: no ordinary
+fertilization, tillage or irrigation selectors are read. It does not disable
+configured fire. For active `FireEvents` years, preflight independently checks
+the plant/soil topographic bounds, selector targets, record capacities, dates,
+codes and fractions. The configured fire year replaces placeholder record years.
+Trailing plant-fire fields ignored by the current Fortran reader remain an
+explicit warning; no input values or dummy annual records are inserted.
 
 Unsupported active climate-factor files, fixed-climate/warming modes,
 plant-management modes other than constant (0) or forcing-year annual (1), and explicit `restartFileFullPath`

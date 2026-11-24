@@ -102,6 +102,22 @@ def required_reads(path, file_id, optional=(), procedure=None):
     return names - set(optional)
 
 
+def required_pft_reads(model, *, prescribed=False, ats=False):
+    """Respect mode-conditional reads in PlantInfoMod::ReadPlantTraitTable."""
+    enabled = {
+        'IROOTJK': ats or prescribed,
+        'MFRUTL': ats or prescribed,
+        'CCPOLT': ats or prescribed,
+        'RTNSC': prescribed,
+        'LFPRTC': prescribed,
+        'CANHT': ats,
+    }
+    return required_reads(
+        model / 'f90src/IOutils/PlantInfoMod.F90', 'pft_nfid',
+        [name for name, active in enabled.items() if not active],
+        procedure='ReadPlantTraitTable')
+
+
 def checked_numbers(var, selection=None):
     data = var[:] if selection is None else var[selection]
     if np.any(np.ma.getmaskarray(data)) or not np.all(np.isfinite(np.ma.getdata(data))):
@@ -399,7 +415,11 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
     def pft_check():
         nonlocal pft_names
         with nc.Dataset(selected['pft_file_in']) as ds:
-            schema = required_reads(model / 'f90src/IOutils/PlantInfoMod.F90', 'pft_nfid', ['IROOTJK', 'CANHT'], procedure='ReadPlantTraitTable')
+            # EcoSIMAPI enables prescribed phenology for radiation tests too.
+            # This gate targets the standalone driver, where ATS is inactive.
+            prescribed = bool(eco.get('ldo_sp_mode', False) or
+                              eco.get('ldo_radiation_test', False))
+            schema = required_pft_reads(model, prescribed=prescribed)
             require(ds, schema)
             for key, dim in [('pfts', 'npfts'), ('pfts_long', 'npft'), ('pfts_short', 'npft'),
                              ('koppen_clim_no', 'nkopenclms'), ('koppen_clim_short', 'nkopenclms'),
@@ -471,12 +491,12 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
             if flag_value not in (0, 1):
                 raise ValueError(f'pft_dflag={flag_value}: only constant (0) and forcing-year annual (1) management are validated')
             flag = int(flag_value)
-            # PlantInfoMod reads record 1 for constant vegetation; its year label
-            # is not a coverage requirement. Keep one explicit record for bridge
-            # round trips rather than accepting unvalidated unused records.
-            years(ds, forcing_years if flag == 1 else [])
-            if flag == 0 and len(ds.dimensions['year']) != 1:
-                raise ValueError('Constant management must store exactly one reusable year record')
+            # Constant vegetation consumes record 1, without reading a year
+            # coordinate. Extra stored records are inactive, including fills.
+            if flag == 1:
+                years(ds, forcing_years)
+            elif 'year' not in ds.dimensions or len(ds.dimensions['year']) < 1:
+                raise ValueError('Constant management requires a first year-dimension record')
             bounds(ds, grid_bounds)
             for key, dims in {'NZ': ('ntopou',), 'nmgnts': ('year','ntopou','maxpfts'),
                               'pft_type': ('year','ntopou','maxpfts'),
@@ -500,10 +520,11 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
             if np.any(nz < 0) or np.any(nz > jp) or np.any(nz != nz.astype(int)):
                 raise ValueError('NZ exceeds PFT capacity or is not a nonnegative integer')
             for it, active in enumerate(nz):
-                vals = checked_numbers(ds['nmgnts'], (slice(None), it, slice(0, int(active))))
+                records = slice(0, 1) if flag == 0 else slice(None)
+                vals = checked_numbers(ds['nmgnts'], (records, it, slice(0, int(active))))
                 if np.any(vals < 0) or np.any(vals > 24) or np.any(vals != vals.astype(int)):
                     raise ValueError('nmgnts exceeds event capacity or is not a nonnegative integer')
-        cfg = bridge.nc_to_config(selected['pft_mgmt_in'])
+        cfg = bridge.nc_to_config(selected['pft_mgmt_in'], constant_record_only=flag == 0)
         validate_events(cfg, recurring_years=model_years if flag == 0 else None)
         enum_text = source_text(model / 'f90src/Modelconfig/ElmIDMod.F90')
         def enum(prefix):
@@ -534,6 +555,14 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
     def soil_check():
         bridge = module('.agents/skills/ecosim-soil-mgmt/scripts/soil_mgmt_excel_bridge.py', 'case_soil')
         with nc.Dataset(selected['soil_mgmt_in']) as ds:
+            if 'year' not in ds.dimensions:
+                raise ValueError('Missing soil-management year dimension')
+            if len(ds.dimensions['year']) == 0:
+                # ReadSoilMgmnt returns before annual selectors or bounds are
+                # read. Fire tables are independent and checked below.
+                finding('warning', 'soil_management',
+                        'Empty year dimension: no ordinary fertilizer, tillage or irrigation records; fire tables remain independent')
+                return
             years(ds, model_years if eco.get('soil_mgmt_use_model_year', False) else forcing_years)
             bounds(ds, grid_bounds)
             require(ds, ['fertf', 'tillf', 'irrigf'])
@@ -573,6 +602,95 @@ def validate(namelist, *, run_cwd=None, text=None, site_id=None, model_root=None
                                 raise ValueError(f'{selector}: invalid irrigation amount or hourly window')
     if 'soil_mgmt_in' in selected:
         check('soil_management', soil_check)
+
+    def fire_check():
+        """Validate selected fire tables even when annual soil management is empty."""
+        spec = eco.get('fireevents', '')
+        if not isinstance(spec, str):
+            raise ValueError('FireEvents must be a character string')
+        spec = spec.rstrip()  # FireMod examines column 5 before stripping anything.
+        if not spec:
+            return
+        # FireMod disables fire for a short/non-year-prefixed string.
+        if len(spec) < 5 or spec[4] != '/':
+            finding('warning', 'fire_management', 'FireEvents does not enable fire in FireMod')
+            return
+        source = source_text(model / 'f90src/Disturbances/FireMod.F90')
+        maximum = int(re.search(r'(?i)max_fire_events\s*=\s*(\d+)', source)[1])
+        entries = spec.split(';')
+        if len(entries) > maximum:
+            raise ValueError(f'FireEvents exceeds {maximum} events')
+        previous_year = -1
+        active = []
+        for entry in entries:
+            match = re.fullmatch(r'(\d{4})/([^/,;\s]{1,10}),([^/,;\s]{1,10})', entry)
+            if not match:
+                raise ValueError(f'Invalid FireEvents entry {entry!r}; expected YYYY/plant_key,soil_key')
+            year = int(match[1])
+            if year <= previous_year:
+                raise ValueError('Fire event years must be strictly increasing')
+            previous_year = year
+            if year in model_years:
+                active.append((year, match[2], match[3]))
+        if not active:
+            return
+        if 'soil_mgmt_in' not in selected or 'pft_mgmt_in' not in selected:
+            raise ValueError('Active fire requires both plant and soil management files')
+        plant_bridge = module('.agents/skills/ecosim-natural-plant-mgmt/scripts/plant_mgmt_excel_bridge.py', 'fire_plant')
+        soil_bridge = module('.agents/skills/ecosim-soil-mgmt/scripts/soil_mgmt_excel_bridge.py', 'fire_soil')
+        enum_text = source_text(model / 'f90src/Modelconfig/ElmIDMod.F90')
+        def enum(prefix):
+            return {int(v) for v in re.findall(r'(?im)integer,\s*parameter\s*::\s*' + prefix + r'\w*\s*=\s*(-?\d+)', enum_text)}
+        def selectors(ds, key):
+            require(ds, [key])
+            var = ds[key]
+            if var.dtype.kind != 'S' or var.ndim != 2 or var.dimensions[0] != 'ntopou' or var.shape[1] < 10:
+                raise ValueError(f'{key}: expected topographic-unit/character fire selectors of width 10')
+            return strings(var).reshape(-1)
+        def event_fields(record, year):
+            fields = [p for p in re.split(r'[\s,]+', record.strip()) if p]
+            if not fields or not re.fullmatch(r'\d{8}', fields[0]):
+                raise ValueError(f'Invalid fire date in {record!r}')
+            # The configured fire year overrides a placeholder record year.
+            fields[0] = fields[0][:4] + f'{year:04d}'
+            return fields
+        with nc.Dataset(selected['pft_mgmt_in']) as plant, nc.Dataset(selected['soil_mgmt_in']) as soil:
+            if bounds(plant, grid_bounds) != bounds(soil, grid_bounds):
+                raise ValueError('Fire requires matching plant/soil topographic bounds')
+            jp = int(re.search(r'(?i)\bJP\s*=\s*(\d+)', source_text(model / 'f90src/Mesh/GridConsts.F90'))[1])
+            if not 1 <= len(plant.dimensions['maxpfts']) <= jp:
+                raise ValueError(f'Plant fire reader supports at most {jp} PFT records')
+            nz = checked_numbers(plant['NZ']).astype(int)
+            for year, plant_key, soil_key in active:
+                trailing = False
+                for unit, (pkey, skey) in enumerate(zip(selectors(plant, plant_key), selectors(soil, soil_key))):
+                    pkey, skey = pkey.rstrip(), skey.rstrip()
+                    require(plant, [pkey]);require(soil, [skey])
+                    pv, sv = plant[pkey], soil[skey]
+                    if pv.dtype.kind != 'S' or pv.ndim != 2 or pv.dimensions[0] != 'maxpfts' or pv.shape[1] < 128:
+                        raise ValueError(f'{pkey}: expected maxpfts/character plant-fire records of width 128')
+                    if sv.dtype.kind != 'S' or sv.ndim != 2 or sv.dimensions[0] != 'nfire' or sv.shape[1] < 24 or not 1 <= sv.shape[0] <= 367:
+                        raise ValueError(f'{skey}: expected 1..367 nfire/character soil-fire records of width 24')
+                    for record in strings(pv)[:nz[unit]]:
+                        if not record.strip():continue
+                        fields = event_fields(record[:128], year)
+                        trailing |= len(fields) > 13
+                        event = plant_bridge.parse_mgmt(' '.join(fields[:13]))
+                        validate_events(event)
+                        if event['iHarvType'] not in enum('iharvtyp_') or event['jHarvType'] not in enum('jharvtyp_'):
+                            raise ValueError(f'{pkey}: undefined plant fire harvest code')
+                        if any(not 0 <= value <= 1 for key, value in event.items() if 'Fraction' in key):
+                            raise ValueError(f'{pkey}: plant fire fraction outside [0,1]')
+                    for record in strings(sv):
+                        if not record.strip():break  # ReadTillageFile stops here.
+                        event = soil_bridge.parse_tillage(' '.join(event_fields(record[:24], year)))
+                        validate_events(event)
+                        if not 1 <= event['iSoilDisturbType'] <= 24 or event['DepzCorp'] < 0:
+                            raise ValueError(f'{skey}: invalid soil fire disturbance type/intensity')
+                if trailing:
+                    finding('warning', 'fire_management',
+                            f'{year}: trailing plant-fire fields are ignored by the current ReadPlantFireMgmt reader (first 13 fields consumed)')
+    check('fire_management', fire_check)
     finding('warning', 'scientific_scope', 'Automated input checks do not establish field representativeness, management budgets, or literature agreement; retain the sourced site review and trait smoke test')
     report['status'] = 'invalid' if any(f['severity'] == 'error' for f in report['findings']) else 'ready_with_warnings' if report['findings'] else 'ready'
     return report

@@ -172,8 +172,8 @@ def build_planting(planting: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def decode_chars(var: nc.Variable) -> np.ndarray:
-    data = var[:]
+def decode_chars(var: nc.Variable, selection: Any = slice(None)) -> np.ndarray:
+    data = var[selection]
     decoded = nc.chartostring(data).astype(str)
     return np.asarray(decoded)
 
@@ -184,14 +184,21 @@ def masked_int(value: Any, default: int = 0) -> int:
     return int(value)
 
 
-def nc_to_config(path: Path) -> dict[str, Any]:
+def nc_to_config(path: Path, *, constant_record_only: bool = False) -> dict[str, Any]:
+    """Decode records; optionally select the model's first constant record.
+
+    The validation-only label 0 identifies that record without inventing a
+    calendar year. Normal export retains its existing year-coordinate behavior.
+    """
     with nc.Dataset(path) as ds:
-        years = [int(y) for y in ds.variables["year"][:]]
         pft_dflag = int(ds.variables["pft_dflag"][:])
-        nmgnts = ds.variables["nmgnts"][:]
-        pft_type = decode_chars(ds.variables["pft_type"])
-        pft_pltinfo = decode_chars(ds.variables["pft_pltinfo"])
-        pft_mgmt = decode_chars(ds.variables["pft_mgmt"])
+        first_only = constant_record_only and pft_dflag == 0
+        selection = slice(0, 1) if first_only else slice(None)
+        years = [0] if first_only else [int(y) for y in ds.variables["year"][:]]
+        nmgnts = ds.variables["nmgnts"][selection]
+        pft_type = decode_chars(ds.variables["pft_type"], selection)
+        pft_pltinfo = decode_chars(ds.variables["pft_pltinfo"], selection)
+        pft_mgmt = decode_chars(ds.variables["pft_mgmt"], selection)
 
         topo_units = []
         for itu in range(len(ds.dimensions["ntopou"])):

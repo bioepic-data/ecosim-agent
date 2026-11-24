@@ -117,6 +117,46 @@ stop_option='nyears'
         self.assertTrue(any('VG_ALPHA' in x['message'] for x in errors))
         self.assertFalse(any('VG_L' in x['message'] for x in errors))
 
+    def hide_prescribed_pft_fields(self):
+        with nc.Dataset(self.root/'pft.nc', 'a') as ds:
+            for name in ('IROOTJK', 'MFRUTL', 'CCPOLT', 'RTNSC', 'LFPRTC', 'CANHT'):
+                if name in ds.variables:
+                    ds.renameVariable(name, 'unused_' + name)
+
+    def test_prognostic_pft_does_not_require_prescribed_fields(self):
+        self.hide_prescribed_pft_fields()
+        self.assertFalse(self.errors())  # Both mode flags default to false.
+        self.nml.write_text(self.nml.read_text().replace(
+            '&ecosim\n', '&ecosim\nldo_sp_mode=.false.\n'))
+        self.assertFalse(self.errors())
+
+    def test_prescribed_pft_requires_its_conditional_fields(self):
+        self.hide_prescribed_pft_fields()
+        self.nml.write_text(self.nml.read_text().replace(
+            '&ecosim\n', '&ecosim\nldo_sp_mode=.true.\n'))
+        errors = [e for e in self.errors() if e['category'] == 'pft_parameters']
+        self.assertEqual(len(errors), 1)
+        for name in ('IROOTJK', 'MFRUTL', 'CCPOLT', 'RTNSC', 'LFPRTC'):
+            self.assertIn(name, errors[0]['message'])
+        self.assertNotIn('CANHT', errors[0]['message'])
+
+    def test_radiation_test_also_requires_prescribed_pft_fields(self):
+        self.hide_prescribed_pft_fields()
+        self.nml.write_text(self.nml.read_text().replace(
+            '&ecosim\n', '&ecosim\nldo_sp_mode=.false.\nldo_radiation_test=.true.\n'))
+        errors = [e for e in self.errors() if e['category'] == 'pft_parameters']
+        self.assertEqual(len(errors), 1)
+        self.assertIn('CCPOLT', errors[0]['message'])
+        self.assertIn('MFRUTL', errors[0]['message'])
+
+    def test_pft_schema_retains_distinct_ats_and_prescribed_requirements(self):
+        conditional = {'IROOTJK', 'MFRUTL', 'CCPOLT', 'RTNSC', 'LFPRTC', 'CANHT'}
+        self.assertFalse(pre.required_pft_reads(self.model) & conditional)
+        self.assertEqual(pre.required_pft_reads(self.model, ats=True) & conditional,
+                         {'IROOTJK', 'MFRUTL', 'CCPOLT', 'CANHT'})
+        self.assertEqual(pre.required_pft_reads(self.model, prescribed=True) & conditional,
+                         conditional - {'CANHT'})
+
     def test_precipitation_plausibility_findings_reach_case_preflight(self):
         with nc.Dataset(self.root/'weather.nc', 'a') as ds:
             ds['RAINH'][:] = .4
@@ -229,9 +269,133 @@ stop_option='nyears'
         self.edit('plant.nc', 'pft_type', (0,0,0,slice(0,6)), np.array(list('BADPFT'), dtype='S1'))
         self.assertTrue(any(f['category'] == 'plant_management' for f in self.errors()))
 
-    def test_constant_mode_rejects_ambiguous_extra_records(self):
+    def test_constant_mode_uses_first_record_without_year_coordinate(self):
         self.edit('plant.nc', 'pft_dflag', (), 0)
-        self.assertTrue(any('exactly one reusable' in f['message'] for f in self.errors()))
+        with nc.Dataset(self.root/'plant.nc', 'a') as ds:
+            ds.renameVariable('year', 'unused_year')
+            ds['nmgnts'][1,0,0] = -9999  # Second record is not consumed.
+            ds['pft_type'][1,0,0,:6] = np.array(list('BADPFT'), dtype='S1')
+            ds['pft_pltinfo'][1,0,0,:3] = np.array(list('bad'), dtype='S1')
+        before = pre.sha256(self.root/'plant.nc')
+        self.assertFalse(self.errors())
+        self.assertEqual(pre.sha256(self.root/'plant.nc'), before)
+        self.edit('plant.nc', 'nmgnts', (0,0,0), 25)
+        self.assertTrue(any(f['category']=='plant_management' for f in self.errors()))
+
+    def empty_management_years(self, filename='soil.nc'):
+        source = self.root/filename
+        scratch = self.root/'empty-soil.nc'
+        with nc.Dataset(source) as src, nc.Dataset(scratch, 'w') as dst:
+            for name, dim in src.dimensions.items():
+                dst.createDimension(name, 0 if name=='year' else len(dim))
+            for name, var in src.variables.items():
+                out = dst.createVariable(name, var.dtype, var.dimensions,
+                                         fill_value=getattr(var, '_FillValue', None))
+                out.setncatts({k:var.getncattr(k) for k in var.ncattrs() if k!='_FillValue'})
+                if 'year' not in var.dimensions:
+                    out[...] = var[...]
+        scratch.replace(source)
+
+    def test_empty_soil_year_means_no_annual_management(self):
+        self.empty_management_years()
+        before = pre.sha256(self.root/'soil.nc')
+        self.assertFalse(self.errors())
+        self.assertEqual(pre.sha256(self.root/'soil.nc'), before)
+        # The model returns before reading these ordinary selectors/bounds.
+        with nc.Dataset(self.root/'soil.nc', 'w') as ds:
+            ds.createDimension('year', 0)
+        self.assertFalse(self.errors())
+
+    def test_constant_plant_management_needs_a_first_record(self):
+        self.edit('plant.nc', 'pft_dflag', (), 0)
+        self.empty_management_years('plant.nc')
+        self.assertTrue(any('requires a first' in f['message'] for f in self.errors()))
+
+    def fire_tables(self):
+        """A configured fire independent of the empty annual soil axis."""
+        self.empty_management_years()
+        self.nml.write_text(self.nml.read_text().replace(
+            '&ecosim\n', "&ecosim\nFireEvents='2002/a_pmf,b_smf'\n"))
+        for filename, key, target in [('plant.nc','a_pmf','a_pm_fire'),
+                                      ('soil.nc','b_smf','b_sm_fire')]:
+            with nc.Dataset(self.root/filename, 'a') as ds:
+                ds.createDimension('fire_selector_chars', 10)
+                var = ds.createVariable(key, 'S1', ('ntopou','fire_selector_chars'))
+                var[:] = np.array(list(target.ljust(10)), dtype='S1')
+                if filename == 'plant.nc':
+                    var = ds.createVariable(target, 'S1', ('maxpfts','char'))
+                    text = '28029999 5 0 1 .5 1 1 1 1 .9 .9 .1 .2'
+                else:
+                    ds.createDimension('nfire', 2)
+                    ds.createDimension('soil_fire_chars', 24)
+                    var = ds.createVariable(target, 'S1', ('nfire','soil_fire_chars'))
+                    text = '28029999 22 .75'
+                var[:] = b' '
+                var[0,:len(text)] = np.array(list(text), dtype='S1')
+
+    def test_empty_soil_axis_still_validates_selected_fire_tables(self):
+        self.fire_tables()
+        self.assertFalse(self.errors())  # Year9999 is replaced with configured2002.
+        with nc.Dataset(self.root/'plant.nc', 'a') as ds:
+            ds['a_pmf'][0,:] = np.array(list('missing   '), dtype='S1')
+        self.assertTrue(any(f['category']=='fire_management' for f in self.errors()))
+
+    def test_invalid_fire_records_remain_errors(self):
+        self.fire_tables()
+        for filename, name, text in [
+                ('plant.nc','a_pm_fire','28029999 5 0 1 1.5 1 1 1 1 .9 .9 .1 .2'),
+                ('plant.nc','a_pm_fire','28029999 5 0 1 NaN 1 1 1 1 .9 .9 .1 .2'),
+                ('plant.nc','a_pm_fire','29029999 5 0 1 .5 1 1 1 1 .9 .9 .1 .2'),
+                ('soil.nc','b_sm_fire','28029999 22 -1')]:
+            with self.subTest(text=text):
+                with nc.Dataset(self.root/filename, 'a') as ds:
+                    saved = ds[name][:].copy()
+                    ds[name][0,:] = b' '
+                    ds[name][0,:len(text)] = np.array(list(text), dtype='S1')
+                self.assertTrue(any(f['category']=='fire_management' for f in self.errors()))
+                with nc.Dataset(self.root/filename, 'a') as ds:
+                    ds[name][:] = saved
+
+    def test_fire_needs_soil_file_even_without_ordinary_management(self):
+        self.fire_tables()
+        text = self.nml.read_text().replace("soil_mgmt_in='soil.nc'", "soil_mgmt_in='NO'")
+        self.assertTrue(any(f['category']=='fire_management' for f in self.errors(pre.validate(self.nml,text=text))))
+
+    def test_fire_schedule_order_and_trailing_fields(self):
+        self.fire_tables()
+        text = self.nml.read_text().replace('2002/a_pmf,b_smf', '2002/a_pmf,b_smf;2001/a_pmf,b_smf')
+        self.assertTrue(any(f['category']=='fire_management' for f in self.errors(pre.validate(self.nml,text=text))))
+        with nc.Dataset(self.root/'plant.nc', 'a') as ds:
+            text = '28029999 5 0 1 .5 1 1 1 1 .9 .9 .1 .2 .025'
+            ds['a_pm_fire'][0,:] = b' '
+            ds['a_pm_fire'][0,:len(text)] = np.array(list(text), dtype='S1')
+        report = self.report()
+        self.assertFalse(self.errors(report))
+        self.assertTrue(any(f['category']=='fire_management' and 'trailing' in f['message']
+                            for f in report['findings']))
+
+    def test_fire_tables_outside_run_window_are_not_read(self):
+        self.fire_tables()
+        with nc.Dataset(self.root/'plant.nc', 'a') as ds:
+            ds['a_pmf'][0,:] = np.array(list('missing   '), dtype='S1')
+        text = self.nml.read_text().replace('2002/a_pmf,b_smf', '2003/a_pmf,b_smf')
+        self.assertFalse(self.errors(pre.validate(self.nml, text=text)))
+
+    def test_fire_enable_condition_preserves_leading_spaces(self):
+        text = self.nml.read_text().replace('&ecosim\n',
+                    "&ecosim\nFireEvents=' 2002/missing,missing'\n")
+        report = pre.validate(self.nml, text=text)
+        self.assertFalse(self.errors(report))
+        self.assertTrue(any('does not enable fire' in f['message'] for f in report['findings']))
+
+    def test_active_fire_table_cannot_have_zero_record_capacity(self):
+        self.fire_tables()
+        with nc.Dataset(self.root/'soil.nc', 'a') as ds:
+            ds.renameDimension('nfire', 'unused_nfire')
+            ds.renameVariable('b_sm_fire', 'unused_fire')
+            ds.createDimension('nfire', 0)
+            ds.createVariable('b_sm_fire', 'S1', ('nfire','soil_fire_chars'))
+        self.assertTrue(any(f['category']=='fire_management' for f in self.errors()))
 
     def test_annual_mode_still_requires_every_forcing_year(self):
         self.constant_plant_file()
