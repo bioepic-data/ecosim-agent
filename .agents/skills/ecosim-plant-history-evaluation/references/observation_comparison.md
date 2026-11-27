@@ -135,6 +135,39 @@ conflict that adjusting saturation alone cannot resolve. Examine sensor level
 shifts and before/after scores; do not infer a calibration change from a step
 alone. Retain frozen-soil liquid/ice and sensor-response uncertainty.
 
+### Score dynamics as well as level
+
+Absolute soil-moisture bias combines several uncertain things:
+- probe calibration, typically ±0.02–0.05 m³/m³ without a site calibration;
+- point-versus-layer support;
+- sensor replacements and level shifts;
+- soil-survey FC/WP used as model parameters.
+
+A level offset alone cannot say whether the model, the probes or the parameters
+are wrong. Report the absolute bias, but always pair it with scores that are
+insensitive to a constant offset:
+- correlation of anomalies from each series' own mean or seasonal cycle;
+- correlation of weekly (or event) changes; daily surface differences are noisy;
+- model/observation standard-deviation ratio (amplitude);
+- drying rates after wetting in dry spells;
+- seasonal range (spring maximum minus late-summer minimum);
+- event changes such as the change from autumn to first freeze.
+
+Remove each instrument period's mean separately: split at sensor changes, so a
+probe step is not scored as drought or recharge. Exclude frozen days for both
+series. Probes see liquid water only, so compare them with model liquid water,
+and report model ice separately.
+
+A model that stays flat while the probes move is wrong whatever the calibration.
+Do not tune soil parameters such as FC, WP or bulk density to the absolute level
+alone; check that a change also improves the dynamics. Before blaming soil water,
+close the water budget for the same window:
+- input (gauge precipitation plus irrigation; check irrigated-site gauges for
+  irrigation catch);
+- ET, from measured and closure-corrected LE;
+- liquid storage change at the probe depths;
+- drainage plus runoff as the residual.
+
 ## Harvest yield
 
 Separate yield rates from harvested totals and avoid summing repeated bu/acre
