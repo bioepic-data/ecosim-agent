@@ -44,6 +44,9 @@ archived sensor metadata, harvest-comment yields, moisture conversion, soil-mois
 dynamics scores (anomalies, drying rates, frozen-day masking) alongside absolute bias, hourly
 restart checks and multiweek time series, and the distinction between seasonal
 agreement and interannual skill.
+For surface energy fluxes (net radiation and its components, latent and sensible
+heat with tower closure, and the transpiration/evaporation split), use
+[ecosim-energy-flux-evaluation](../ecosim-energy-flux-evaluation/SKILL.md).
 
 ## Evaluate plant behavior
 
