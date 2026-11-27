@@ -1,0 +1,4 @@
+interface:
+  display_name: "EcoSIM Energy Flux Evaluation"
+  short_description: "Evaluate Rn, LE, H, radiation and ET partition against tower data"
+  default_prompt: "Use $ecosim-energy-flux-evaluation to compare EcoSIM net radiation, latent and sensible heat, radiation components and the transpiration/evaporation split with the tower, including the closure gap."

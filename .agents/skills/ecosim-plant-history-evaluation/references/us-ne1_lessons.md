@@ -161,3 +161,39 @@ trace the active pathway and verify response. This result is case-specific.
 The reproducible reports are under
 `work-space/share_tang_USNe_3sites/ne1_run/experiments/soybean_VCMX45_VOMX9_20261112/`
 in `evaluation_geometry/` and `evaluation_VRN360/`.
+
+### Soil moisture: level versus dynamics (2026-11-27)
+
+These checks explain the 2013–2023 shallow wet bias (production 10 / 25 / 50 cm:
++0.062 / +0.036 / +0.058 m³/m³).
+
+- **Inputs are not the cause.**
+  - Forcing precipitation is the US-Ne3 gauge; the Ne1 and Ne2 gauges catch
+    irrigation.
+  - June–September Ne1-minus-Ne3 gauge totals (1808 mm) match the applied
+    irrigation (1823 mm over 11 years).
+- **Spin-up memory is about 1 year** for soil water. Runs with different
+  spin-ups converge by the end of 2013, and the 10 cm bias shows no trend.
+- **The bias is not a frozen-probe artifact.**
+  - Model liquid minus probe is +0.093 at 10 cm on tower-frozen days and +0.092
+    on unfrozen days.
+  - Both series fall when frozen (tower 0.29 → 0.17; model liquid 0.38 → 0.25).
+- **The decisive signal is dynamic.**
+  - From 1 November to the first freeze, the tower's 10 cm soil drains by
+    0.056 on average (2014–15: 0.38 → 0.13), with ET equal to the model's.
+  - The model stays at about 0.37 (its FC) every year.
+  - The model then accumulates ice (total 10 cm water 0.45 in February, near
+    porosity), and its March soil is 1.0–1.2 °C colder.
+  - In spring it evaporates 187 mm of 215 mm input against 130 measured (173
+    closure-corrected), and stores 45 mm against 79 at the probe depths.
+  - This points to missing drainage below FC near the surface.
+- **Level-only fixes moved the level without fixing the dynamics.**
+  - FC −0.04 halved the wet bias but fit an uncertain absolute level.
+  - Bottom drainage removed a deep pile-up but changed 10 cm by only 0.003.
+  - Lower surface bulk density (1.25) made the soil wetter.
+- **50 cm: observed level step.** The observed 50 cm level rises about 0.05
+  around 2014–2015, so score the periods separately.
+
+Reports: main evaluation sections 15–21 under
+`work-space/share_tang_USNe_3sites/ne1_run/experiments/current_code_2013_2023_20261125T042240Z/US-Ne1/evaluation/current_code_evaluation_20261125/`;
+analyses in `spring_water_budget_20261127T033229Z/` and `winter_check_20261127T034714Z/`.
